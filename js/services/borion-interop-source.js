@@ -12,7 +12,7 @@
     bridgeVersion: '1.0.0',
     sourceAppId: 'amanda-estetica',
     sourceAppName: 'Amanda Estética — Clínica',
-    sourceAppVersion: '1.8.6',
+    sourceAppVersion: '1.8.7',
     targetProfileAlias: 'estetica',
     snapshotFile: 'amanda-estetica.bridge.json',
     ackFile: 'amanda-estetica.ack.json',

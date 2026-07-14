@@ -14,6 +14,14 @@
   const DATA_FILE = 'Amanda_Clinica_Dados.json';
   const USER_KEY = 'amanda_clinica_gdrive_user';
   const FOLDER_PREFIX = 'amanda_clinica_gdrive_folder_';
+  const SUBFOLDER_PREFIX = 'amanda_clinica_gdrive_subfolder_';
+  const INTEGRATION_FILE_PREFIX = 'amanda_clinica_gdrive_integration_file_';
+  const APP_FOLDERS = Object.freeze({ backups: 'Backups', integration: 'Borion_Integracoes', photos: 'Fotos_Clientes' });
+  const resolvedFolders = new Map();
+  const resolvedIntegrationFiles = new Map();
+  const folderInflight = new Map();
+  const integrationFileInflight = new Map();
+  const structureInflight = new Map();
 
   const Auth = {
     token: '',
@@ -114,11 +122,133 @@
     const safe = String(name).replace(/'/g, "\\'");
     let q = `'${parentId}' in parents and name='${safe}' and trashed=false`;
     if (mimeType) q += ` and mimeType='${mimeType}'`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent('files(id,name,modifiedTime,mimeType,size)')}`;
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&orderBy=${encodeURIComponent('modifiedTime desc')}&fields=${encodeURIComponent('files(id,name,modifiedTime,mimeType,size,parents,trashed)')}`;
     const response = await fetch(url, { headers: await headers() });
     if (!response.ok) throw new Error('Falha ao consultar o Google Drive.');
     const result = await response.json();
     return result.files?.[0] || null;
+  }
+
+  function scopedStorageKey(prefix, parentId, name) {
+    const user = Auth.cachedUser();
+    const sub = user?.sub || 'unknown';
+    return `${prefix}${sub}_${parentId}_${encodeURIComponent(name)}`;
+  }
+
+  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  async function getDriveObjectMeta(fileId) {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,parents,trashed,modifiedTime`, {
+      headers: await headers()
+    });
+    if (!response.ok) {
+      const error = new Error('Falha ao validar um item do Google Drive.');
+      error.status = response.status;
+      throw error;
+    }
+    return await response.json();
+  }
+
+  async function withCrossTabLock(name, task) {
+    if (navigator?.locks?.request) return await navigator.locks.request(name, task);
+    return await task();
+  }
+
+  async function ensureFolderUncached(parentId, name) {
+    const cacheKey = scopedStorageKey(SUBFOLDER_PREFIX, parentId, name);
+    const memoryKey = `${parentId}:${name}`;
+    const cachedId = localStorage.getItem(cacheKey);
+    if (cachedId) {
+      try {
+        const meta = await getDriveObjectMeta(cachedId);
+        if (!meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder' && meta.name === name && (meta.parents || []).includes(parentId)) {
+          const folder = { id: meta.id, name: meta.name, mimeType: meta.mimeType, modifiedTime: meta.modifiedTime };
+          resolvedFolders.set(memoryKey, folder);
+          return folder;
+        }
+      } catch (error) {
+        if (error.status !== 404) console.warn('[GOOGLE_DRIVE] Pasta em cache inválida:', error);
+      }
+      localStorage.removeItem(cacheKey);
+    }
+
+    let folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
+    if (!folder) {
+      // A listagem do Drive possui consistência eventual. Uma segunda leitura evita
+      // criar outra pasta quando outra aba acabou de criar a primeira.
+      await sleep(700);
+      folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
+    }
+    if (!folder) folder = await createFolder(parentId, name);
+    localStorage.setItem(cacheKey, folder.id);
+    resolvedFolders.set(memoryKey, folder);
+    return folder;
+  }
+
+  async function ensureFolder(parentId, name) {
+    const memoryKey = `${parentId}:${name}`;
+    if (resolvedFolders.has(memoryKey)) return resolvedFolders.get(memoryKey);
+    if (folderInflight.has(memoryKey)) return await folderInflight.get(memoryKey);
+    const userSub = Auth.cachedUser()?.sub || 'unknown';
+    const promise = withCrossTabLock(`amanda-drive-folder:${userSub}:${parentId}:${name}`, () => ensureFolderUncached(parentId, name))
+      .finally(() => folderInflight.delete(memoryKey));
+    folderInflight.set(memoryKey, promise);
+    return await promise;
+  }
+
+  async function ensureAppFolders(rootId) {
+    if (structureInflight.has(rootId)) return await structureInflight.get(rootId);
+    const promise = (async () => {
+      const structure = { rootId };
+      for (const [key, name] of Object.entries(APP_FOLDERS)) {
+        structure[key] = (await ensureFolder(rootId, name)).id;
+      }
+      return structure;
+    })().finally(() => structureInflight.delete(rootId));
+    structureInflight.set(rootId, promise);
+    return await promise;
+  }
+
+  async function resolveIntegrationFileUncached(folderId, name, createObject = null) {
+    const memoryKey = `${folderId}:${name}`;
+    const cacheKey = scopedStorageKey(INTEGRATION_FILE_PREFIX, folderId, name);
+    const cachedId = resolvedIntegrationFiles.get(memoryKey) || localStorage.getItem(cacheKey);
+    if (cachedId) {
+      try {
+        const meta = await getDriveObjectMeta(cachedId);
+        if (!meta.trashed && meta.name === name && meta.mimeType === 'application/json' && (meta.parents || []).includes(folderId)) {
+          resolvedIntegrationFiles.set(memoryKey, meta.id);
+          localStorage.setItem(cacheKey, meta.id);
+          return { id: meta.id, name: meta.name };
+        }
+      } catch (error) {
+        if (error.status !== 404) console.warn('[GOOGLE_DRIVE] Arquivo de integração em cache inválido:', error);
+      }
+      resolvedIntegrationFiles.delete(memoryKey);
+      localStorage.removeItem(cacheKey);
+    }
+
+    let file = await findChild(folderId, name, 'application/json');
+    if (!file && createObject !== null) {
+      await sleep(450);
+      file = await findChild(folderId, name, 'application/json');
+      if (!file) file = await createJsonFile(folderId, name, createObject);
+    }
+    if (file) {
+      resolvedIntegrationFiles.set(memoryKey, file.id);
+      localStorage.setItem(cacheKey, file.id);
+    }
+    return file || null;
+  }
+
+  async function resolveIntegrationFile(folderId, name, createObject = null) {
+    const memoryKey = `${folderId}:${name}`;
+    if (integrationFileInflight.has(memoryKey)) return await integrationFileInflight.get(memoryKey);
+    const userSub = Auth.cachedUser()?.sub || 'unknown';
+    const promise = withCrossTabLock(`amanda-drive-file:${userSub}:${folderId}:${name}`, () => resolveIntegrationFileUncached(folderId, name, createObject))
+      .finally(() => integrationFileInflight.delete(memoryKey));
+    integrationFileInflight.set(memoryKey, promise);
+    return await promise;
   }
 
   async function createFolder(parentId, name) {
@@ -224,6 +354,7 @@
         folderId = picked.id;
         setFolderId(folderId);
       }
+      await ensureAppFolders(folderId);
       return { user, folderId };
     },
 
@@ -231,7 +362,9 @@
       if (!this.isConfigured()) return await this.connect(interactive);
       await Auth.ensureToken(interactive);
       if (!Auth.cachedUser()) await Auth.fetchUser();
-      return { user: Auth.cachedUser(), folderId: getFolderId() };
+      const folderId = getFolderId();
+      await ensureAppFolders(folderId);
+      return { user: Auth.cachedUser(), folderId };
     },
 
     async findDataFile() {
@@ -248,8 +381,7 @@
       localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
 
       if (options.backup) {
-        let backups = await findChild(folderId, 'Backups', 'application/vnd.google-apps.folder');
-        if (!backups) backups = await createFolder(folderId, 'Backups');
+        const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
         const reason = String(options.reason || 'manual').replace(/[^a-zA-Z0-9_-]/g, '-');
         await createJsonFile(backups.id, `Amanda_Clinica_${reason}_${stamp()}.json`, state);
       }
@@ -283,18 +415,16 @@
     /* BORION INTEROP v1.0.0 — protected transport seam. */
     async integrationFolderId() {
       const { folderId } = await this.ensureConnection(false);
-      let folder = await findChild(folderId, 'Borion_Integracoes', 'application/vnd.google-apps.folder');
-      if (!folder) folder = await createFolder(folderId, 'Borion_Integracoes');
-      return folder.id;
+      return (await ensureFolder(folderId, APP_FOLDERS.integration)).id;
     },
     async writeIntegrationJson(name, object) {
       const folderId = await this.integrationFolderId();
-      const existing = await findChild(folderId, name, 'application/json');
-      return existing ? await updateJsonFile(existing.id, object) : await createJsonFile(folderId, name, object);
+      const existing = await resolveIntegrationFile(folderId, name, object);
+      return await updateJsonFile(existing.id, object);
     },
     async readIntegrationJson(name) {
       const folderId = await this.integrationFolderId();
-      const existing = await findChild(folderId, name, 'application/json');
+      const existing = await resolveIntegrationFile(folderId, name, null);
       return existing ? await readJsonFile(existing.id) : null;
     },
 
@@ -302,6 +432,10 @@
       const user = Auth.cachedUser();
       if (user) localStorage.removeItem(folderKey(user.sub));
       this.currentFile = null;
+      resolvedFolders.clear();
+      resolvedIntegrationFiles.clear();
+      integrationFileInflight.clear();
+      structureInflight.clear();
       Auth.signOut();
     }
   };
