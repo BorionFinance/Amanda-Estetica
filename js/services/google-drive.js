@@ -16,12 +16,15 @@
   const FOLDER_PREFIX = 'amanda_clinica_gdrive_folder_';
   const SUBFOLDER_PREFIX = 'amanda_clinica_gdrive_subfolder_';
   const INTEGRATION_FILE_PREFIX = 'amanda_clinica_gdrive_integration_file_';
+  const STRUCTURE_PREFIX = 'amanda_clinica_gdrive_structure_';
   const APP_FOLDERS = Object.freeze({ backups: 'Backups', integration: 'Borion_Integracoes', photos: 'Fotos_Clientes' });
   const resolvedFolders = new Map();
   const resolvedIntegrationFiles = new Map();
   const folderInflight = new Map();
   const integrationFileInflight = new Map();
   const structureInflight = new Map();
+  const resolvedStructures = new Map();
+  let connectionInflight = null;
 
   const Auth = {
     token: '',
@@ -118,27 +121,46 @@
       : { Authorization: `Bearer ${token}` };
   }
 
-  async function findChild(parentId, name, mimeType = '') {
+  async function findChildren(parentId, name, mimeType = '') {
     const safe = String(name).replace(/'/g, "\\'");
     let q = `'${parentId}' in parents and name='${safe}' and trashed=false`;
     if (mimeType) q += ` and mimeType='${mimeType}'`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&orderBy=${encodeURIComponent('modifiedTime desc')}&fields=${encodeURIComponent('files(id,name,modifiedTime,mimeType,size,parents,trashed)')}`;
-    const response = await fetch(url, { headers: await headers() });
+    const params = new URLSearchParams({
+      q,
+      orderBy: 'createdTime asc',
+      pageSize: '100',
+      fields: 'files(id,name,createdTime,modifiedTime,mimeType,size,parents,trashed)'
+    });
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: await headers() });
     if (!response.ok) throw new Error('Falha ao consultar o Google Drive.');
     const result = await response.json();
-    return result.files?.[0] || null;
+    return Array.isArray(result.files) ? result.files : [];
+  }
+
+  async function findChild(parentId, name, mimeType = '') {
+    const matches = await findChildren(parentId, name, mimeType);
+    if (matches.length > 1) console.warn(`[GOOGLE_DRIVE] Existem ${matches.length} itens chamados “${name}”. O mais antigo será reutilizado.`);
+    return matches[0] || null;
   }
 
   function scopedStorageKey(prefix, parentId, name) {
-    const user = Auth.cachedUser();
-    const sub = user?.sub || 'unknown';
-    return `${prefix}${sub}_${parentId}_${encodeURIComponent(name)}`;
+    return `${prefix}${parentId}_${encodeURIComponent(name)}`;
+  }
+
+  function structureStorageKey(rootId) { return `${STRUCTURE_PREFIX}${rootId}`; }
+  function readStoredStructure(rootId) {
+    try { return JSON.parse(localStorage.getItem(structureStorageKey(rootId)) || 'null'); }
+    catch (_) { return null; }
+  }
+  function writeStoredStructure(rootId, structure) {
+    localStorage.setItem(structureStorageKey(rootId), JSON.stringify(structure));
+    resolvedStructures.set(rootId, structure);
   }
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
   async function getDriveObjectMeta(fileId) {
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,parents,trashed,modifiedTime`, {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,parents,trashed,createdTime,modifiedTime`, {
       headers: await headers()
     });
     if (!response.ok) {
@@ -151,7 +173,34 @@
 
   async function withCrossTabLock(name, task) {
     if (navigator?.locks?.request) return await navigator.locks.request(name, task);
-    return await task();
+    const key = `amanda_clinica_mutex_${encodeURIComponent(name)}`;
+    const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      let current = null;
+      try { current = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
+      if (!current || Number(current.expiresAt) < Date.now()) {
+        localStorage.setItem(key, JSON.stringify({ token, expiresAt: Date.now() + 30000 }));
+        let confirmed = null;
+        try { confirmed = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
+        if (confirmed?.token === token) {
+          try { return await task(); }
+          finally {
+            try {
+              const latest = JSON.parse(localStorage.getItem(key) || 'null');
+              if (latest?.token === token) localStorage.removeItem(key);
+            } catch (_) { localStorage.removeItem(key); }
+          }
+        }
+      }
+      await sleep(120 + Math.floor(Math.random() * 120));
+    }
+    throw new Error('Outra aba ainda está preparando as pastas do Google Drive. Feche as abas duplicadas e tente novamente.');
+  }
+
+  function isExpectedFolder(meta, parentId, name) {
+    return !!meta && !meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder' &&
+      meta.name === name && (meta.parents || []).includes(parentId);
   }
 
   async function ensureFolderUncached(parentId, name) {
@@ -161,23 +210,24 @@
     if (cachedId) {
       try {
         const meta = await getDriveObjectMeta(cachedId);
-        if (!meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder' && meta.name === name && (meta.parents || []).includes(parentId)) {
-          const folder = { id: meta.id, name: meta.name, mimeType: meta.mimeType, modifiedTime: meta.modifiedTime };
+        if (isExpectedFolder(meta, parentId, name)) {
+          const folder = { id: meta.id, name: meta.name, mimeType: meta.mimeType, createdTime: meta.createdTime, modifiedTime: meta.modifiedTime };
           resolvedFolders.set(memoryKey, folder);
           return folder;
         }
       } catch (error) {
-        if (error.status !== 404) console.warn('[GOOGLE_DRIVE] Pasta em cache inválida:', error);
+        if (![403, 404].includes(error.status)) console.warn('[GOOGLE_DRIVE] Pasta em cache inválida:', error);
       }
       localStorage.removeItem(cacheKey);
     }
 
     let folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
     if (!folder) {
-      // A listagem do Drive possui consistência eventual. Uma segunda leitura evita
-      // criar outra pasta quando outra aba acabou de criar a primeira.
-      await sleep(700);
-      folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
+      for (const delay of [600, 1400, 2600]) {
+        await sleep(delay);
+        folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
+        if (folder) break;
+      }
     }
     if (!folder) folder = await createFolder(parentId, name);
     localStorage.setItem(cacheKey, folder.id);
@@ -189,22 +239,46 @@
     const memoryKey = `${parentId}:${name}`;
     if (resolvedFolders.has(memoryKey)) return resolvedFolders.get(memoryKey);
     if (folderInflight.has(memoryKey)) return await folderInflight.get(memoryKey);
-    const userSub = Auth.cachedUser()?.sub || 'unknown';
-    const promise = withCrossTabLock(`amanda-drive-folder:${userSub}:${parentId}:${name}`, () => ensureFolderUncached(parentId, name))
+    const promise = withCrossTabLock(`amanda-drive-folder:${parentId}:${name}`, () => ensureFolderUncached(parentId, name))
       .finally(() => folderInflight.delete(memoryKey));
     folderInflight.set(memoryKey, promise);
     return await promise;
   }
 
+  async function validateStoredStructure(rootId, structure) {
+    if (!structure || structure.rootId !== rootId) return null;
+    const normalized = { rootId };
+    for (const [key, name] of Object.entries(APP_FOLDERS)) {
+      const id = structure[key];
+      if (!id) return null;
+      try {
+        const meta = await getDriveObjectMeta(id);
+        if (!isExpectedFolder(meta, rootId, name)) return null;
+        normalized[key] = id;
+        resolvedFolders.set(`${rootId}:${name}`, { id, name, mimeType: meta.mimeType, createdTime: meta.createdTime, modifiedTime: meta.modifiedTime });
+        localStorage.setItem(scopedStorageKey(SUBFOLDER_PREFIX, rootId, name), id);
+      } catch (_) { return null; }
+    }
+    return normalized;
+  }
+
   async function ensureAppFolders(rootId) {
+    if (resolvedStructures.has(rootId)) return resolvedStructures.get(rootId);
     if (structureInflight.has(rootId)) return await structureInflight.get(rootId);
-    const promise = (async () => {
+    const promise = withCrossTabLock(`amanda-drive-structure:${rootId}`, async () => {
+      const stored = await validateStoredStructure(rootId, readStoredStructure(rootId));
+      if (stored) {
+        resolvedStructures.set(rootId, stored);
+        return stored;
+      }
       const structure = { rootId };
       for (const [key, name] of Object.entries(APP_FOLDERS)) {
         structure[key] = (await ensureFolder(rootId, name)).id;
+        writeStoredStructure(rootId, structure);
       }
+      writeStoredStructure(rootId, structure);
       return structure;
-    })().finally(() => structureInflight.delete(rootId));
+    }).finally(() => structureInflight.delete(rootId));
     structureInflight.set(rootId, promise);
     return await promise;
   }
@@ -244,8 +318,7 @@
   async function resolveIntegrationFile(folderId, name, createObject = null) {
     const memoryKey = `${folderId}:${name}`;
     if (integrationFileInflight.has(memoryKey)) return await integrationFileInflight.get(memoryKey);
-    const userSub = Auth.cachedUser()?.sub || 'unknown';
-    const promise = withCrossTabLock(`amanda-drive-file:${userSub}:${folderId}:${name}`, () => resolveIntegrationFileUncached(folderId, name, createObject))
+    const promise = withCrossTabLock(`amanda-drive-file:${folderId}:${name}`, () => resolveIntegrationFileUncached(folderId, name, createObject))
       .finally(() => integrationFileInflight.delete(memoryKey));
     integrationFileInflight.set(memoryKey, promise);
     return await promise;
@@ -346,16 +419,20 @@
     isConfigured() { return !!(Auth.cachedUser() && getFolderId()); },
 
     async connect(interactive = true) {
-      await Auth.ensureToken(interactive);
-      const user = await Auth.fetchUser();
-      let folderId = getFolderId();
-      if (!folderId) {
-        const picked = await openFolderPicker();
-        folderId = picked.id;
-        setFolderId(folderId);
-      }
-      await ensureAppFolders(folderId);
-      return { user, folderId };
+      if (connectionInflight) return await connectionInflight;
+      connectionInflight = (async () => {
+        await Auth.ensureToken(interactive);
+        const user = await Auth.fetchUser();
+        let folderId = getFolderId();
+        if (!folderId) {
+          const picked = await openFolderPicker();
+          folderId = picked.id;
+          setFolderId(folderId);
+        }
+        await ensureAppFolders(folderId);
+        return { user, folderId };
+      })().finally(() => { connectionInflight = null; });
+      return await connectionInflight;
     },
 
     async ensureConnection(interactive = false) {
@@ -436,6 +513,8 @@
       resolvedIntegrationFiles.clear();
       integrationFileInflight.clear();
       structureInflight.clear();
+      resolvedStructures.clear();
+      connectionInflight = null;
       Auth.signOut();
     }
   };
