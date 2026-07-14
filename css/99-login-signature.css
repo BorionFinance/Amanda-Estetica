@@ -1,0 +1,281 @@
+/**
+ * Amanda Estética v1.7.5 — tela de entrada em largura total, assinatura estática ao cursor.
+ * A assinatura ocupa o viewport inteiro, sem max-width, overflow ou recorte.
+ */
+body.login-page{
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+}
+body.login-page #root{
+  width:100%!important;
+  min-height:100dvh!important;
+  overflow:visible!important;
+}
+
+.login-shell{
+  position:relative!important;
+  isolation:isolate!important;
+  width:100vw!important;
+  max-width:none!important;
+  min-height:100dvh!important;
+  margin:0!important;
+  padding:clamp(28px,5vw,86px)!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1.08fr) minmax(330px,.82fr)!important;
+  align-items:center!important;
+  align-content:center!important;
+  gap:clamp(34px,5.2vw,92px)!important;
+  overflow:visible!important;
+  background:transparent!important;
+  border:0!important;
+  outline:0!important;
+  box-shadow:none!important;
+}
+
+/* Canvas independente do layout: não herda o antigo limite de 1050 px. */
+.login-signature-stage{
+  position:fixed!important;
+  inset:0!important;
+  z-index:0!important;
+  width:100vw!important;
+  height:100dvh!important;
+  max-width:none!important;
+  max-height:none!important;
+  overflow:visible!important;
+  contain:none!important;
+  pointer-events:none!important;
+  user-select:none!important;
+  opacity:.24;
+  transform:none!important;
+  transition:opacity .75s cubic-bezier(.22,1,.36,1);
+  will-change:opacity;
+}
+.login-signature-stage::after{
+  content:"";
+  position:absolute;
+  inset:12% 16%;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.10),transparent 68%);
+  pointer-events:none;
+}
+.login-signature-frame{
+  position:absolute!important;
+  inset:0!important;
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  max-height:none!important;
+  opacity:0;
+  transform:none!important;
+  object-fit:fill!important;
+  pointer-events:none!important;
+}
+.login-signature-stage.is-visible .login-signature-frame{opacity:1}
+.login-signature-stage.is-complete{opacity:.20}
+
+/* Conteúdo frontal: mantém leitura e deixa a assinatura passar por trás. */
+.login-brand,
+.login-card,
+.login-footer{
+  position:relative;
+  z-index:2;
+}
+.login-brand{
+  justify-self:end!important;
+  width:min(100%,620px)!important;
+  align-items:center!important;
+}
+.login-card{
+  justify-self:start!important;
+  width:min(100%,440px)!important;
+}
+.login-brand-copy{
+  position:relative;
+  width:100%;
+  max-width:620px!important;
+  padding:clamp(16px,2vw,24px)!important;
+  border-radius:30px;
+  background:linear-gradient(135deg,rgba(251,241,247,.56),rgba(255,255,255,.12));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.30);
+}
+.login-card-clear,
+.login-card-clear:hover{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  padding:0!important;
+}
+.profile-login-clear{
+  border:0!important;
+  background:rgba(255,255,255,.08)!important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  border-radius:20px!important;
+  padding:14px 8px!important;
+}
+.profile-login-clear:hover,
+.profile-login-clear:focus-visible{
+  background:rgba(255,255,255,.17)!important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24)!important;
+}
+.create-profile-clear,
+.pin-hint{
+  text-shadow:0 1px 10px rgba(255,255,255,.80);
+}
+.login-footer{
+  position:fixed!important;
+  left:0!important;
+  right:0!important;
+  bottom:max(16px,env(safe-area-inset-bottom))!important;
+  z-index:3!important;
+  padding-inline:20px;
+}
+
+/* Entrada discreta do conteúdo; a assinatura permanece independente. */
+@media(prefers-reduced-motion:no-preference){
+  .login-brand{animation:loginContentIn .52s .06s cubic-bezier(.22,1,.36,1) both}
+  .login-card{animation:loginContentIn .52s .12s cubic-bezier(.22,1,.36,1) both}
+  @keyframes loginContentIn{
+    from{opacity:0;transform:translate3d(0,16px,0)}
+    to{opacity:1;transform:none}
+  }
+}
+
+@media(max-width:860px){
+  .login-shell{
+    grid-template-columns:1fr!important;
+    gap:28px!important;
+    padding:max(28px,env(safe-area-inset-top)) 24px max(54px,env(safe-area-inset-bottom))!important;
+  }
+  .login-brand,
+  .login-card{
+    justify-self:center!important;
+    width:min(100%,560px)!important;
+  }
+  .login-signature-stage{opacity:.22}
+  .login-signature-stage.is-complete{opacity:.17}
+}
+
+@media(max-width:600px){
+  .login-shell{gap:22px!important;padding-inline:20px!important}
+  .login-brand-copy{padding:14px 15px!important;border-radius:24px}
+  .login-signature-stage{opacity:.20}
+  .login-signature-stage.is-complete{opacity:.16}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .login-signature-stage{opacity:.16;transition:none;will-change:auto}
+  .login-signature-frame{opacity:1;transition:none}
+  .login-brand,.login-card{animation:none!important}
+}
+
+
+/* v1.7.6 — Autenticação estilo Windows 11 na tela de bloqueio */
+.login-auth-layer{
+  position:fixed;
+  inset:0;
+  z-index:8;
+  pointer-events:none;
+}
+.login-auth-backdrop{
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  opacity:0;
+  pointer-events:auto;
+  background:rgba(244,235,240,.18);
+  -webkit-backdrop-filter:blur(22px) saturate(110%);
+  backdrop-filter:blur(22px) saturate(110%);
+  transition:opacity .22s ease;
+}
+.login-auth-backdrop.is-open{opacity:1}
+.login-auth-backdrop.is-closing{opacity:0;pointer-events:none}
+.login-auth-card{
+  width:min(100%, 360px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+  text-align:center;
+  color:var(--ink,#241c23);
+}
+.login-auth-avatar .profile-avatar,
+.login-auth-avatar .profile-avatar.xlarge{
+  width:108px!important;
+  height:108px!important;
+  border-radius:50%!important;
+  box-shadow:0 10px 24px rgba(57,31,44,.14), inset 0 1px 0 rgba(255,255,255,.30)!important;
+}
+.login-auth-card h2{
+  margin:6px 0 0;
+  font-size:30px;
+  line-height:1.08;
+  font-weight:600;
+  letter-spacing:-.02em;
+}
+.login-auth-card p{
+  margin:0;
+  font-size:14px;
+  color:rgba(56,38,48,.70);
+}
+.login-auth-form{
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:8px;
+}
+.login-auth-field{
+  width:100%;
+  display:block;
+}
+.login-auth-field input{
+  width:100%;
+  min-height:54px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.46);
+  background:rgba(255,255,255,.28);
+  -webkit-backdrop-filter:blur(14px) saturate(110%);
+  backdrop-filter:blur(14px) saturate(110%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.40), 0 10px 26px rgba(57,31,44,.06);
+  padding:0 16px;
+  font-size:17px;
+  color:var(--ink,#241c23);
+  outline:none;
+}
+.login-auth-field input::placeholder{color:rgba(70,49,59,.52)}
+.login-auth-field input:focus{
+  border-color:rgba(217,123,162,.75);
+  box-shadow:0 0 0 4px rgba(217,123,162,.12), inset 0 1px 0 rgba(255,255,255,.50), 0 12px 30px rgba(57,31,44,.07);
+}
+.login-auth-actions{
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  width:100%;
+}
+.login-auth-actions .btn{min-width:120px}
+.login-auth-hint{
+  margin-top:4px;
+  font-size:12px;
+  color:rgba(61,43,53,.62);
+}
+.shake-error{animation:loginFieldShake .34s ease}
+@keyframes loginFieldShake{
+  0%,100%{transform:none}
+  20%{transform:translateX(-4px)}
+  40%{transform:translateX(4px)}
+  60%{transform:translateX(-3px)}
+  80%{transform:translateX(3px)}
+}
+@media(max-width:600px){
+  .login-auth-card{width:min(100%,340px)}
+  .login-auth-avatar .profile-avatar,.login-auth-avatar .profile-avatar.xlarge{width:96px!important;height:96px!important}
+  .login-auth-card h2{font-size:28px}
+}

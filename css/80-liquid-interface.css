@@ -1,0 +1,229 @@
+/**
+ * Amanda Estética — Modos Automático/Smartphone/Pro, gotas líquidas, toggles e FAB arrastável.
+ * Ordem de carregamento importante: este arquivo faz parte da cascata modular.
+ */
+
+/* =========================================================
+   v1.4.4 — Modos de interface, controles líquidos e mobile refinado
+   ========================================================= */
+:root{
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --liquid-edge:rgba(255,255,255,.72);
+  --liquid-fill:rgba(255,255,255,.34);
+  --liquid-active:linear-gradient(145deg,rgba(255,255,255,.82),rgba(244,210,225,.70));
+}
+
+/* Scrollbars delicadas em todo o sistema. */
+*{scrollbar-width:thin;scrollbar-color:rgba(184,123,150,.30) transparent}
+*::-webkit-scrollbar{width:5px;height:5px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{
+  background:linear-gradient(180deg,rgba(210,145,174,.34),rgba(170,108,136,.24));
+  border-radius:999px;
+  border:1px solid transparent;
+  background-clip:padding-box;
+}
+*::-webkit-scrollbar-thumb:hover{background:rgba(190,117,150,.44);background-clip:padding-box}
+
+/* Menu móvel mais sólido: ainda é vidro, mas não deixa o conteúdo atravessar. */
+@media(max-width:860px){
+  .sidebar{
+    background:linear-gradient(180deg,rgba(255,252,254,.975) 0%,rgba(254,244,249,.955) 52%,rgba(249,232,241,.945) 100%)!important;
+    -webkit-backdrop-filter:blur(34px) saturate(125%)!important;
+    backdrop-filter:blur(34px) saturate(125%)!important;
+    box-shadow:18px 0 50px rgba(74,48,61,.18)!important;
+  }
+  .sidebar::before{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;
+    background:linear-gradient(115deg,rgba(255,255,255,.55),rgba(255,255,255,.08) 48%,rgba(235,197,214,.18));
+  }
+  .sidebar-scrim{background:rgba(46,31,39,.44);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+  .sidebar-brand,.sidebar-footer{background:rgba(255,255,255,.18)!important}
+}
+
+/* Alternador de visualização em formato de gota/líquido. */
+.view-switcher,.filter-segmented{
+  position:relative;
+  gap:5px!important;
+  padding:5px!important;
+  border-radius:999px!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.48),rgba(255,243,249,.24))!important;
+  border:1px solid rgba(255,255,255,.58)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.74),0 10px 26px rgba(113,73,90,.07)!important;
+  -webkit-backdrop-filter:blur(22px) saturate(145%)!important;
+  backdrop-filter:blur(22px) saturate(145%)!important;
+  overflow:visible;
+}
+.view-mode-button,.filter-segmented button{
+  position:relative;
+  min-height:34px!important;
+  border-radius:999px!important;
+  padding:7px 12px!important;
+  overflow:hidden;
+  isolation:isolate;
+}
+.view-mode-button::before,.filter-segmented button::before{
+  content:"";position:absolute;inset:1px 6px auto;height:45%;border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,.42),rgba(255,255,255,0));
+  opacity:0;transition:opacity .24s ease;z-index:-1;
+}
+.view-mode-button.active,.filter-segmented button.active{
+  background:var(--liquid-active)!important;
+  color:var(--rose-dark)!important;
+  border:1px solid rgba(255,255,255,.78)!important;
+  box-shadow:0 9px 20px rgba(197,104,145,.16),inset 0 1px 0 rgba(255,255,255,.88),inset 0 -1px 0 rgba(215,154,180,.14)!important;
+  transform:translateY(-1px);
+}
+.view-mode-button.active::before,.filter-segmented button.active::before{opacity:1}
+
+/* Toggles no estilo iOS líquido. */
+.check-field{
+  align-items:center!important;
+  min-height:58px;
+  border-radius:17px!important;
+  background:rgba(255,255,255,.34)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.58)!important;
+}
+.check-field input[type="checkbox"]{
+  appearance:none;
+  -webkit-appearance:none;
+  width:50px;
+  height:30px;
+  flex:0 0 50px;
+  margin:0 2px 0 0!important;
+  border:1px solid rgba(255,255,255,.72);
+  border-radius:999px;
+  background:linear-gradient(180deg,rgba(199,198,204,.72),rgba(181,180,188,.66));
+  box-shadow:inset 0 2px 6px rgba(79,68,75,.15),0 3px 10px rgba(91,70,81,.08);
+  position:relative;
+  transition:background .30s cubic-bezier(.22,1,.36,1),box-shadow .30s ease;
+  cursor:pointer;
+}
+.check-field input[type="checkbox"]::before{
+  content:"";
+  position:absolute;
+  width:26px;height:26px;left:1px;top:1px;border-radius:50%;
+  background:linear-gradient(180deg,#fff,rgba(255,255,255,.88));
+  box-shadow:0 3px 9px rgba(60,48,55,.20),inset 0 1px 0 #fff;
+  transition:transform .32s cubic-bezier(.22,1,.36,1);
+}
+.check-field input[type="checkbox"]:checked{
+  background:linear-gradient(180deg,#e46f9e,#ca4f82);
+  box-shadow:inset 0 1px 2px rgba(112,45,74,.18),0 7px 16px rgba(205,79,131,.20);
+}
+.check-field input[type="checkbox"]:checked::before{transform:translateX(20px)}
+.check-field input[type="checkbox"]:focus-visible{outline:0;box-shadow:0 0 0 4px rgba(211,91,143,.15)}
+
+/* Seletor de modo Smartphone / Pro / Automático. */
+.ios-interface-card{
+  padding:16px;
+  border-radius:24px;
+  background:linear-gradient(145deg,rgba(255,255,255,.62),rgba(255,246,250,.44));
+  border:1px solid rgba(255,255,255,.76);
+  box-shadow:0 16px 38px rgba(113,73,90,.09),inset 0 1px 0 rgba(255,255,255,.76);
+  -webkit-backdrop-filter:blur(24px) saturate(140%);
+  backdrop-filter:blur(24px) saturate(140%);
+}
+.ios-interface-copy{margin:0 2px 13px}
+.ios-interface-copy strong,.ios-interface-copy small{display:block}
+.ios-interface-copy strong{font-size:12px}
+.ios-interface-copy small{font-size:9px;color:var(--muted);margin-top:4px}
+.ios-device-mode{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ios-device-mode-option{
+  position:relative;
+  min-width:0;
+  display:grid;
+  grid-template-columns:36px minmax(0,1fr) 18px;
+  align-items:center;
+  gap:8px;
+  padding:10px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.42);
+  background:rgba(255,255,255,.18);
+  color:inherit;
+  text-align:left;
+  overflow:hidden;
+  transition:transform .28s cubic-bezier(.22,1,.36,1),background .28s ease,box-shadow .28s ease,border-color .28s ease;
+}
+.ios-device-mode-option::before{
+  content:"";position:absolute;inset:1px 10% auto;height:45%;border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,.42),rgba(255,255,255,0));opacity:.45;pointer-events:none;
+}
+.ios-device-mode-option:hover{transform:translateY(-2px);background:rgba(255,255,255,.36)}
+.ios-device-mode-option.active{
+  background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(245,213,227,.70));
+  border-color:rgba(255,255,255,.86);
+  box-shadow:0 12px 28px rgba(198,105,145,.16),inset 0 1px 0 rgba(255,255,255,.90);
+}
+.ios-device-mode-icon{width:36px;height:36px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.48);color:var(--rose-dark);box-shadow:inset 0 1px 0 rgba(255,255,255,.75)}
+.ios-device-mode-option strong,.ios-device-mode-option small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ios-device-mode-option strong{font-size:10px}
+.ios-device-mode-option small{font-size:7px;color:var(--muted);margin-top:3px}
+.ios-mode-check{opacity:0;transform:scale(.75);color:var(--rose-dark);transition:.24s ease}
+.ios-device-mode-option.active .ios-mode-check{opacity:1;transform:none}
+
+/* Botão flutuante centralizado e arrastável entre os cantos. */
+.fab{
+  width:58px!important;height:58px!important;
+  padding:0!important;
+  display:none;
+  place-items:center!important;
+  align-content:center;
+  justify-content:center;
+  border-radius:20px!important;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+  cursor:grab;
+  transform-origin:center;
+}
+.fab .icon{display:block;margin:auto}
+.fab.is-dragging{cursor:grabbing;transform:scale(1.07)!important;box-shadow:0 26px 48px rgba(190,70,121,.34)!important}
+@media(max-width:860px){.fab{display:grid}}
+
+/* Modo Smartphone forçado, mesmo em telas grandes. */
+html.ui-smartphone{--topbar:60px}
+html.ui-smartphone .sidebar{
+  transform:translateX(-102%);
+  width:min(300px,86vw);
+  background:linear-gradient(180deg,rgba(255,252,254,.975),rgba(254,244,249,.955) 52%,rgba(249,232,241,.945))!important;
+  box-shadow:18px 0 50px rgba(74,48,61,.18)!important;
+}
+html.ui-smartphone body.sidebar-open .sidebar{transform:none}
+html.ui-smartphone .sidebar-scrim{display:none;background:rgba(46,31,39,.44)}
+html.ui-smartphone body.sidebar-open .sidebar-scrim{display:block}
+html.ui-smartphone .app-main{margin-left:0}
+html.ui-smartphone .menu-btn{display:grid}
+html.ui-smartphone .top-add{display:none}
+html.ui-smartphone .mobile-bottom-nav{display:grid;grid-template-columns:repeat(5,1fr)}
+html.ui-smartphone .fab{display:grid}
+html.ui-smartphone .page{padding:18px 14px calc(104px + env(safe-area-inset-bottom));max-width:none}
+html.ui-smartphone .dashboard-grid,
+html.ui-smartphone .settings-grid,
+html.ui-smartphone .ios-settings-layout,
+html.ui-smartphone .packages-list{grid-template-columns:1fr}
+html.ui-smartphone .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+html.ui-smartphone .card-grid,
+html.ui-smartphone .clients-grid,
+html.ui-smartphone .products-grid{grid-template-columns:1fr}
+html.ui-smartphone .ios-settings-aside{grid-template-columns:1fr}
+html.ui-smartphone .section-head{align-items:flex-start;flex-direction:column}
+html.ui-smartphone .ios-device-mode{grid-template-columns:1fr}
+html.ui-smartphone .global-search{position:absolute;top:calc(var(--topbar) + 8px);left:12px;right:12px;display:none;max-width:none}
+
+/* Modo Pro mantém a navegação completa quando houver espaço. */
+html.ui-pro .mobile-bottom-nav,html.ui-pro .fab,html.ui-pro .menu-btn{display:none!important}
+html.ui-pro .sidebar{transform:none!important}
+html.ui-pro .sidebar-scrim{display:none!important}
+html.ui-pro .app-main{margin-left:var(--sidebar)!important}
+html.ui-pro .top-add{display:inline-flex!important}
+
+@media(max-width:860px){
+  .ios-device-mode{grid-template-columns:1fr}
+  .ios-device-mode-option{grid-template-columns:38px minmax(0,1fr) 20px;padding:11px 12px}
+  html.ui-pro body{overflow-x:auto}
+  html.ui-pro .app-shell{min-width:1040px}
+  html.ui-pro .sidebar{width:var(--sidebar)!important;padding-top:0!important;background:var(--sidebar-glass)!important}
+  html.ui-pro .topbar{height:var(--topbar)!important;padding-top:0!important}
+  html.ui-pro .page{padding:26px!important}
+}

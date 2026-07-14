@@ -1,0 +1,71 @@
+/**
+ * Amanda Estética v1.5.9 — Relógio inspirado em tela de bloqueio moderna.
+ * Sem caixa branca, sem blur e sem sombra pesada: visual mais leve e elegante.
+ */
+.live-time-card{
+  min-width:220px;
+  padding:0;
+  border:0!important;
+  border-radius:0;
+  background:transparent!important;
+  box-shadow:none!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  justify-content:center;
+  text-align:right;
+  line-height:1;
+  isolation:isolate;
+}
+.live-time-card small,
+.live-time-card time{
+  display:block;
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Rounded","Segoe UI Variable Display","Segoe UI",sans-serif;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1,"ss01" 1;
+  text-rendering:geometricPrecision;
+  -webkit-font-smoothing:antialiased;
+}
+.live-time-card small{
+  order:1;
+  margin-bottom:4px;
+  color:rgba(77,48,65,.72);
+  font-size:clamp(10px,.74vw,12px);
+  font-weight:520;
+  letter-spacing:-.018em;
+  text-transform:none;
+  white-space:nowrap;
+}
+.live-time-card time{
+  order:2;
+  color:#503344;
+  font-size:clamp(42px,3.45vw,58px);
+  font-weight:310;
+  letter-spacing:-.075em;
+  line-height:.86;
+  text-shadow:0 1px 0 rgba(255,255,255,.55),0 8px 26px rgba(131,72,101,.10);
+  white-space:nowrap;
+}
+@media(max-width:860px){
+  .dashboard-heading-actions{align-items:center}
+  .live-time-card{
+    min-width:0;
+    flex:0 1 auto;
+    max-width:none;
+    align-items:flex-start;
+    text-align:left;
+  }
+  .live-time-card small{font-size:10px;margin-bottom:4px}
+  .live-time-card time{font-size:clamp(44px,13vw,58px);line-height:.88}
+}
+@media(max-width:600px){
+  .live-time-card{flex:0 0 auto;max-width:none}
+  .live-time-card time{font-size:46px}
+}
+@media(prefers-contrast:more){
+  .live-time-card small{color:#513546}
+  .live-time-card time{color:#38222f;text-shadow:none}
+}

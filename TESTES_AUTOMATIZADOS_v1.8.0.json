@@ -1,0 +1,37 @@
+{
+  "version": "1.8.0",
+  "suites": 3,
+  "checks": 52,
+  "javascriptErrors": 0,
+  "viewsRendered": 12,
+  "formsOpened": 12,
+  "desktopOverflow": false,
+  "mobileOverflow": false,
+  "relationTests": {
+    "packageFinanceReceivedAndPending": true,
+    "packageSessionConsumesStock": true,
+    "packageSessionDoesNotDuplicateRevenue": true,
+    "normalAttendanceCreatesFinance": true,
+    "cancelAttendanceRestoresStock": true,
+    "cancelAttendanceRemovesAutoFinance": true,
+    "clientRenameCascades": true,
+    "consentCanBeDeleted": true,
+    "appointmentCanBeDeleted": true,
+    "linkedProtocolArchives": true,
+    "packageCapacityIsEnforced": true,
+    "unknownProductLinkIsBlocked": true,
+    "canceledPackagePreservesReceivedValue": true,
+    "packageWithHistoryIsPreserved": true,
+    "extraProfileCanBeDeletedSafely": true
+  },
+  "syntheticBenchmark": {
+    "clients": 1000,
+    "products": 200,
+    "protocols": 200,
+    "packages": 1000,
+    "attendances": 5000,
+    "firstAuditMs": 48.2,
+    "secondAuditMs": 43.7,
+    "falseRepairsOnSecondAudit": 0
+  }
+}

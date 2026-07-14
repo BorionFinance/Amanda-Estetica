@@ -1,0 +1,130 @@
+/**
+ * Amanda Estética v1.5.2 — otimização crítica de Configurações e transições.
+ * Mantém a pilha iOS e o deslizamento lateral, mas evita filtros e camadas
+ * que forçavam repintura completa a cada quadro.
+ */
+
+/* Estado normal: não deixar páginas inteiras presas em uma camada da GPU. */
+.app-shell,.login-shell,.page{
+  transform:none;
+  backface-visibility:visible;
+  will-change:auto!important;
+}
+
+/* Configurações: os cards internos ainda parecem vidro, porém sem blur aninhado.
+   O blur dentro de cards sticky era o maior custo durante a rolagem. */
+.ios-profile-hero,
+.ios-settings-list,
+.ios-cloud-card,
+.ios-clinic-summary,
+.ios-database-stats,
+.ios-security-note,
+.ios-interface-card,
+.ios-settings-main.ios-scroll-stack>.ios-stack-card,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+
+.ios-profile-hero,
+.ios-settings-list,
+.ios-cloud-card,
+.ios-clinic-summary,
+.ios-database-stats,
+.ios-security-note,
+.ios-interface-card{
+  contain:layout paint style;
+}
+
+.ios-settings-page{contain:layout style}
+.ios-settings-layout{contain:layout style;isolation:isolate}
+.ios-settings-main,.ios-settings-aside{
+  overflow:visible!important;
+  contain:layout style;
+}
+
+/* A pilha continua sticky, mas sem transform, transição ou pseudo-camada por card. */
+.ios-settings-main.ios-scroll-stack>.ios-stack-card,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card{
+  transform:none!important;
+  backface-visibility:visible!important;
+  will-change:auto!important;
+  transition:none!important;
+  background:linear-gradient(180deg,#fcf7fa 0%,#faeff5 100%)!important;
+  box-shadow:0 8px 22px rgba(113,73,90,.075),0 -1px 0 rgba(255,255,255,.74)!important;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card::after,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card::after{display:none!important}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card>h3,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card>h3{
+  transform:none!important;
+  transition:none!important;
+  box-shadow:none!important;
+}
+
+/* Cards sticky não recebem a segunda animação de revelação. */
+.ios-stack-card.ios-scroll-reveal{
+  opacity:1!important;
+  transform:none!important;
+  transition:none!important;
+}
+
+/* Transição entre bloqueio e app: apenas compositor (transform + opacity).
+   O deslocamento curto mantém a leitura de direção sem mover uma página inteira
+   por 100% da largura, o que rasterizava todos os cards novamente. */
+.screen-enter-right,.screen-enter-left,.screen-exit-left,.screen-exit-right{
+  backface-visibility:hidden!important;
+  contain:layout paint style;
+  will-change:transform,opacity!important;
+}
+.screen-enter-right{animation:screenEnterRightFast .24s cubic-bezier(.22,1,.36,1) both!important}
+.screen-enter-left{animation:screenEnterLeftFast .24s cubic-bezier(.22,1,.36,1) both!important}
+.screen-exit-left{animation:screenExitLeftFast .16s cubic-bezier(.4,0,1,1) both!important;pointer-events:none}
+.screen-exit-right{animation:screenExitRightFast .16s cubic-bezier(.4,0,1,1) both!important;pointer-events:none}
+@keyframes screenEnterRightFast{from{opacity:.72;transform:translate3d(min(72px,18vw),0,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@keyframes screenEnterLeftFast{from{opacity:.72;transform:translate3d(max(-72px,-18vw),0,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@keyframes screenExitLeftFast{to{opacity:.18;transform:translate3d(max(-42px,-10vw),0,0)}}
+@keyframes screenExitRightFast{to{opacity:.18;transform:translate3d(min(42px,10vw),0,0)}}
+
+/* Durante os poucos milissegundos da troca, desligar efeitos que exigem
+   recálculo do que existe atrás do vidro em cada frame. */
+body.screen-transitioning{overflow:hidden!important}
+body.screen-transitioning .sidebar,
+body.screen-transitioning .topbar,
+body.screen-transitioning .mobile-bottom-nav,
+body.screen-transitioning .global-search,
+body.screen-transitioning .modal,
+body.screen-transitioning .login-card,
+body.screen-transitioning .profile-login{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+body.screen-transitioning .pro-card,
+body.screen-transitioning .panel,
+body.screen-transitioning .list-panel,
+body.screen-transitioning .hero-card,
+body.screen-transitioning .stat-card,
+body.screen-transitioning .client-card,
+body.screen-transitioning .package-card,
+body.screen-transitioning .protocol-card,
+body.screen-transitioning .product-card{
+  box-shadow:none!important;
+}
+body.screen-transitioning .app-shell,
+body.screen-transitioning .login-shell{
+  overflow:hidden;
+  min-height:100dvh;
+}
+
+@media(max-width:860px){
+  .ios-settings-main.ios-scroll-stack>.ios-stack-card,
+  .ios-settings-aside.ios-scroll-stack>.ios-stack-card{
+    box-shadow:0 6px 18px rgba(113,73,90,.07),0 -1px 0 rgba(255,255,255,.76)!important;
+  }
+  body.screen-transitioning .sidebar,
+  body.screen-transitioning .topbar,
+  body.screen-transitioning .mobile-bottom-nav{
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+  }
+}

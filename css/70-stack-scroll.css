@@ -1,0 +1,106 @@
+/**
+ * Amanda Estética — Empilhamento iOS durante o scroll, com limite correto de seção.
+ * Ordem de carregamento importante: este arquivo faz parte da cascata modular.
+ */
+
+/* =========================================================
+   v1.4.3 — Pilha iOS restaurada, com liberação no fim da seção
+   ========================================================= */
+.ios-settings-layout{
+  align-items:start!important;
+  position:relative;
+  isolation:isolate;
+}
+.ios-settings-main,
+.ios-settings-aside{
+  align-self:start!important;
+  block-size:max-content;
+  min-height:0;
+  min-width:0;
+  position:relative;
+  isolation:isolate;
+  overflow:clip;
+  padding:0 0 34px;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card{
+  position:sticky!important;
+  top:calc(var(--ios-stack-top) + var(--stack-offset,0px))!important;
+  z-index:var(--stack-order,1)!important;
+  margin:0 0 18px!important;
+  padding:8px!important;
+  border-radius:28px!important;
+  background:linear-gradient(180deg,rgba(250,243,247,.965),rgba(249,239,245,.925))!important;
+  -webkit-backdrop-filter:blur(30px) saturate(140%)!important;
+  backdrop-filter:blur(30px) saturate(140%)!important;
+  box-shadow:0 18px 44px rgba(113,73,90,.10),0 -1px 0 rgba(255,255,255,.62)!important;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card::after,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  border-radius:inherit;
+  background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,.04));
+  pointer-events:none;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card:last-child,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card:last-child{
+  position:relative!important;
+  top:auto!important;
+  z-index:var(--stack-order,1)!important;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card>h3,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card>h3{
+  position:relative;
+  z-index:3;
+  width:max-content!important;
+  max-width:calc(100% - 16px)!important;
+  margin:0 0 7px 5px!important;
+  padding:4px 9px!important;
+  border-radius:999px!important;
+  background:rgba(250,243,247,.90)!important;
+  -webkit-backdrop-filter:blur(18px) saturate(130%)!important;
+  backdrop-filter:blur(18px) saturate(130%)!important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card+.ios-stack-card,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card+.ios-stack-card{
+  margin-top:0!important;
+}
+
+/* O último cartão funciona como tampa da pilha e arrasta toda a coluna para fora.
+   Isso preserva a sobreposição sem deixar cartões flutuando no fundo da página. */
+.ios-settings-main.ios-scroll-stack>.ios-stack-card:last-child::before,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card:last-child::before{
+  content:"";
+  position:absolute;
+  left:-10px;
+  right:-10px;
+  top:-26px;
+  height:28px;
+  z-index:-1;
+  background:linear-gradient(180deg,rgba(249,239,245,0),rgba(249,239,245,.96));
+  pointer-events:none;
+}
+
+@media(max-width:860px){
+  .ios-settings-main,
+  .ios-settings-aside{
+    overflow:clip;
+    padding-bottom:26px;
+  }
+  .ios-settings-main.ios-scroll-stack>.ios-stack-card,
+  .ios-settings-aside.ios-scroll-stack>.ios-stack-card{
+    top:calc(var(--ios-stack-top) + var(--stack-offset,0px))!important;
+    padding:6px!important;
+    border-radius:24px!important;
+    background:linear-gradient(180deg,rgba(252,247,250,.975),rgba(249,239,245,.945))!important;
+    box-shadow:0 16px 36px rgba(113,73,90,.11),0 -1px 0 rgba(255,255,255,.66)!important;
+  }
+}

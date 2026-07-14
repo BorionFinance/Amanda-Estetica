@@ -1,0 +1,143 @@
+/**
+ * Amanda Estética — Otimizações de desempenho sem remover o visual premium.
+ * Mantém o rosa, o vidro e as transições, mas concentra blur apenas nas camadas
+ * realmente flutuantes. Cartões repetidos usam superfícies translúcidas leves.
+ */
+
+:root{
+  --glass-blur:blur(14px) saturate(125%);
+  --shadow:0 18px 46px rgba(117,73,91,.11);
+  --shadow-sm:0 7px 20px rgba(117,73,91,.075);
+}
+
+/* Os halos já existem no background do body; retirar filtros fixos evita repintura contínua. */
+body::before,body::after{display:none!important}
+
+/* Vidro pesado somente em elementos fixos/flutuantes. */
+.sidebar,.topbar,.mobile-bottom-nav,.modal,.modal-backdrop,.ios-wheel-sheet,.ios-wheel-backdrop{
+  -webkit-backdrop-filter:blur(15px) saturate(125%)!important;
+  backdrop-filter:blur(15px) saturate(125%)!important;
+}
+
+/* Cartões repetidos: aparência translúcida sem recalcular o fundo a cada quadro. */
+.panel,.list-panel,.client-card,.protocol-card,.record-card,.package-card,.photo-card,
+.client-compact-card,.protocol-compact-card,.product-compact-card,.product-card,.agenda-day,
+.mini-summary>div,.stat-card,.hero-card,.login-card,.profile-photo-editor,.backup-list>div,
+.check-field,.empty-state,.inline-filter,.global-search,.view-switcher,.filter-segmented,
+.ios-interface-card,.ios-settings-group,.ios-security-note,.pro-card{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  background-color:rgba(255,255,255,.82)!important;
+  box-shadow:var(--shadow-sm)!important;
+}
+
+/* Mantém a profundidade rosa sem sombras gigantes. */
+.hero-card{box-shadow:0 18px 44px rgba(167,98,126,.12)!important}
+.client-card:hover,.protocol-card:hover,.package-card:hover,.product-card:hover,
+.client-compact-card:hover,.protocol-compact-card:hover,.product-compact-card:hover,
+.panel:hover,.stat-card:hover,.agenda-day:hover,.list-panel:hover,.photo-card:hover,.record-card:hover{
+  box-shadow:0 14px 30px rgba(135,86,105,.11)!important;
+}
+
+/* Evita promover centenas de elementos para camadas GPU permanentes. */
+.nav-item,.icon-btn,.btn,.profile-mini,.profile-login,.view-mode-button,.filter-segmented button,
+.mobile-bottom-nav button,.compact-card-main,.client-card-main,.text-button,.list-row,
+.appointment-card,.agenda-day>header,.product-card,.protocol-card,.package-card,.client-card,
+.protocol-compact-card,.product-compact-card,.client-compact-card,.ios-scroll-reveal{
+  will-change:auto!important;
+  transition-property:transform,opacity,background-color,border-color,color!important;
+}
+.page-enter-left,.page-enter-right,.page-enter-soft,.page-exit-left,.page-exit-right,
+.screen-enter-left,.screen-enter-right,.screen-exit-left,.screen-exit-right,.fab.is-dragging{
+  will-change:transform,opacity!important;
+}
+
+/* Entrada continua bonita, porém mais curta e sem animação duplicada em todos os cartões. */
+.hero-card,.panel,.list-panel,.client-card,.protocol-card,.package-card,.product-card,
+.client-compact-card,.protocol-compact-card,.product-compact-card,.stat-card,.agenda-day,
+.photo-card,.record-card{animation:none!important}
+.ios-scroll-reveal{
+  transform:translate3d(0,10px,0) scale(.996)!important;
+  transition-duration:.34s,.40s!important;
+}
+.ios-scroll-reveal.is-visible{transform:none!important}
+
+/* A pilha permanece, mas usa uma superfície opaca leve em vez de blur por cartão. */
+.ios-settings-main.ios-scroll-stack>.ios-stack-card,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card,
+.ios-settings-main>.ios-stack-card,
+.ios-settings-aside>.ios-stack-card{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  background:linear-gradient(180deg,rgba(252,247,250,.985),rgba(249,239,245,.965))!important;
+  box-shadow:0 12px 28px rgba(113,73,90,.085),0 -1px 0 rgba(255,255,255,.70)!important;
+}
+.ios-settings-main.ios-scroll-stack>.ios-stack-card>h3,
+.ios-settings-aside.ios-scroll-stack>.ios-stack-card>h3,
+.ios-settings-main>.ios-stack-card>h3,
+.ios-settings-aside>.ios-stack-card>h3{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  background:rgba(251,245,248,.97)!important;
+}
+
+/* Listas extensas deixam o navegador pular a pintura do que está fora da tela. */
+.list-row,.appointment-card,.timeline-row,.finance-row,.attendance-row,.product-row,
+.alert-item,.backup-list>div{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 64px;
+}
+.photo-frame{contain:layout paint}
+.photo-frame img{transform:translateZ(0)}
+
+/* Controles líquidos preservados sem blur individual. */
+.view-switcher,.filter-segmented,.ios-interface-card{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.icon-btn,.btn,.fab,.toast{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+
+/* Mobile: maior ganho, mantendo menu legível e rosa. */
+@media(max-width:860px){
+  .sidebar{
+    background:linear-gradient(180deg,rgba(255,252,254,.985),rgba(254,244,249,.975) 52%,rgba(249,232,241,.965))!important;
+    -webkit-backdrop-filter:blur(16px) saturate(118%)!important;
+    backdrop-filter:blur(16px) saturate(118%)!important;
+    box-shadow:14px 0 36px rgba(74,48,61,.15)!important;
+  }
+  .topbar,.mobile-bottom-nav{
+    -webkit-backdrop-filter:blur(12px) saturate(118%)!important;
+    backdrop-filter:blur(12px) saturate(118%)!important;
+  }
+  .sidebar-scrim{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+
+  .agenda-list.ios-scroll-stack>.ios-stack-card,
+  .packages-list.ios-scroll-stack>.ios-stack-card,
+  .clients-grid.ios-scroll-stack>.ios-stack-card,
+  .card-grid.ios-scroll-stack>.ios-stack-card,
+  .products-grid.ios-scroll-stack>.ios-stack-card,
+  .photo-grid.ios-scroll-stack>.ios-stack-card{
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+    background:rgba(255,251,253,.975)!important;
+    box-shadow:0 10px 25px rgba(117,73,91,.095)!important;
+  }
+
+  /* Touch não precisa calcular estados de hover pesados. */
+  .client-card:hover,.protocol-card:hover,.package-card:hover,.product-card:hover,
+  .client-compact-card:hover,.protocol-compact-card:hover,.product-compact-card:hover,
+  .panel:hover,.stat-card:hover,.agenda-day:hover,.list-panel:hover,.photo-card:hover,.record-card:hover,
+  .nav-item:hover,.profile-mini:hover,.profile-login:hover,.view-mode-button:hover,
+  .filter-segmented button:hover,.mobile-bottom-nav button:hover,.client-card-main:hover,
+  .compact-card-main:hover,.list-row:hover,.appointment-card:hover{
+    transform:none!important;
+    box-shadow:var(--shadow-sm)!important;
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  *{scroll-behavior:auto!important}
+}

@@ -1,0 +1,283 @@
+/**
+ * Amanda Estética — Menu fixo, profundidade, microzoom e pilhas de cartões.
+ * Ordem de carregamento importante: este arquivo faz parte da cascata modular.
+ */
+
+/* =========================================================
+   v1.4.1 — Login limpo, navegação fixa e profundidade iOS
+   ========================================================= */
+:root{
+  --sidebar-glass:linear-gradient(180deg,rgba(255,251,253,.76) 0%,rgba(255,242,248,.62) 48%,rgba(250,233,241,.58) 100%);
+  --ios-stack-top:calc(var(--topbar) + 14px);
+}
+
+/* A janela principal vira o único scroller: menu fixo e sem cortes no fim da tela. */
+html,body{height:100%;min-height:100%;overflow:hidden}
+body.modal-open .app-main{overflow:hidden}
+.app-shell{height:100dvh;min-height:100svh;overflow:hidden;isolation:isolate}
+.app-main{
+  height:100dvh;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  scrollbar-gutter:stable;
+  -webkit-overflow-scrolling:touch;
+}
+.page{min-height:calc(100dvh - var(--topbar));margin-bottom:0}
+
+.sidebar{
+  position:fixed;
+  inset:0 auto 0 0;
+  height:100dvh;
+  min-height:100svh;
+  max-height:100dvh;
+  overflow:hidden;
+  background:var(--sidebar-glass)!important;
+  border-right:0!important;
+  box-shadow:12px 0 46px rgba(105,70,87,.045)!important;
+  -webkit-backdrop-filter:blur(34px) saturate(145%);
+  backdrop-filter:blur(34px) saturate(145%);
+}
+.sidebar::after{
+  content:"";
+  position:absolute;
+  inset:0 0 0 auto;
+  width:1px;
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.72) 10%,rgba(255,255,255,.32) 76%,transparent);
+  pointer-events:none;
+}
+.sidebar-brand{
+  flex:0 0 var(--topbar);
+  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,0));
+  border-bottom:0!important;
+}
+.sidebar nav{
+  min-height:0;
+  flex:1 1 auto;
+  overflow-x:visible;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(195,134,160,.28) transparent;
+  padding:14px 13px calc(18px + env(safe-area-inset-bottom));
+}
+.sidebar nav::-webkit-scrollbar{width:4px}
+.sidebar nav::-webkit-scrollbar-thumb{background:rgba(195,134,160,.28);border-radius:999px}
+.sidebar-footer{
+  flex:0 0 auto;
+  padding:12px 12px max(12px,env(safe-area-inset-bottom));
+  border-top:0;
+  background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.16));
+}
+
+/* Dock lateral com microzoom inspirado no macOS, sem deslocar o restante. */
+.nav-item{
+  transform-origin:left center;
+  position:relative;
+  overflow:visible;
+}
+.nav-item:hover{
+  transform:translate3d(5px,0,0) scale(1.045);
+  z-index:4;
+  background:rgba(255,255,255,.70)!important;
+  box-shadow:0 12px 28px rgba(117,73,91,.09)!important;
+}
+.nav-item.active:hover{transform:translate3d(4px,0,0) scale(1.035)}
+
+/* Topo mobile: ícone real da página no lugar do menu de três riscos. */
+.view-menu-btn{color:var(--rose-dark)}
+.view-menu-btn>span{display:grid;place-items:center}
+.topbar-title{min-width:170px}
+.topbar-title h1{display:flex;align-items:center;gap:7px}
+
+/* Login como tela de entrada do sistema: leve, transparente e sem relógio/logomarca solta. */
+.login-page{overflow:auto}
+.login-shell{
+  min-height:100dvh;
+  height:auto;
+  align-content:center;
+  position:relative;
+}
+.login-brand{align-items:center}
+.login-brand-copy{max-width:520px}
+.login-brand-copy .eyebrow{margin-bottom:9px}
+.login-card-clear,
+.login-card-clear:hover{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  padding:4px!important;
+}
+.profile-login-clear{
+  border:1px solid rgba(255,255,255,.22)!important;
+  background:rgba(255,255,255,.13)!important;
+  box-shadow:none!important;
+  -webkit-backdrop-filter:blur(14px) saturate(120%);
+  backdrop-filter:blur(14px) saturate(120%);
+  border-radius:20px;
+  padding:13px 14px;
+}
+.profile-login-clear:hover{
+  background:rgba(255,255,255,.30)!important;
+  border-color:rgba(255,255,255,.48)!important;
+  box-shadow:0 14px 34px rgba(117,73,91,.08)!important;
+}
+.create-profile-clear{
+  opacity:.72;
+  margin-top:2px;
+  font-weight:650;
+}
+.create-profile-clear:hover{opacity:1}
+.pin-hint{padding:9px 4px 3px;opacity:.72}
+.login-footer{background:transparent}
+
+/* Centralização óptica das iniciais em todos os avatares sem foto. */
+.profile-avatar:not(.has-photo){
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center;
+  padding:0!important;
+  line-height:1!important;
+  font-variant-numeric:tabular-nums;
+}
+.profile-avatar:not(.has-photo)::first-letter{line-height:1}
+
+/* A visão geral fica estritamente informativa. */
+.pro-profile-static{margin-top:10px}
+.pro-profile-static-card .pro-profile-head{padding-bottom:11px}
+.pro-profile-static p{display:none!important}
+
+/* Animação de entrada por rolagem, suave e sem sacrificar legibilidade. */
+.ios-scroll-reveal{
+  opacity:0;
+  transform:translate3d(0,16px,0) scale(.992);
+  transition:
+    opacity .48s cubic-bezier(.22,1,.36,1) var(--reveal-delay,0ms),
+    transform .56s cubic-bezier(.22,1,.36,1) var(--reveal-delay,0ms),
+    box-shadow .30s ease;
+  will-change:opacity,transform;
+}
+.ios-scroll-reveal.is-visible{opacity:1;transform:none}
+
+/* Pilhas iOS: o próximo cartão desliza sobre o anterior, com vidro suficientemente
+   opaco para impedir que títulos e nomes se misturem. */
+.ios-settings-main>.ios-stack-card,
+.ios-settings-aside>.ios-stack-card{
+  position:sticky;
+  top:var(--ios-stack-top);
+  z-index:var(--stack-order,1);
+  padding:8px;
+  margin:-8px;
+  border-radius:27px;
+  background:linear-gradient(180deg,rgba(249,241,245,.975),rgba(249,241,245,.93));
+  -webkit-backdrop-filter:blur(30px) saturate(138%);
+  backdrop-filter:blur(30px) saturate(138%);
+  box-shadow:0 -1px 0 rgba(255,255,255,.56);
+}
+.ios-settings-main>.ios-stack-card+.ios-stack-card,
+.ios-settings-aside>.ios-stack-card+.ios-stack-card{margin-top:18px}
+.ios-settings-main>.ios-stack-card>h3,
+.ios-settings-aside>.ios-stack-card>h3{
+  position:relative;
+  z-index:2;
+  width:max-content;
+  max-width:calc(100% - 12px);
+  padding:4px 8px;
+  margin:0 0 6px 4px;
+  border-radius:999px;
+  background:rgba(249,241,245,.94);
+  -webkit-backdrop-filter:blur(18px);
+  backdrop-filter:blur(18px);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.sticky-group{position:relative;top:auto}
+
+/* Empilhamento para listas em uma coluna no mobile. */
+@media(max-width:860px){
+  :root{--ios-stack-top:calc(var(--topbar) + 10px)}
+  .app-shell,.app-main,.sidebar{height:100dvh;min-height:100svh;max-height:100dvh}
+  .sidebar{
+    width:min(300px,86vw);
+    padding-top:env(safe-area-inset-top);
+    background:linear-gradient(180deg,rgba(255,251,253,.90),rgba(250,236,244,.82))!important;
+  }
+  .sidebar nav{padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+  .topbar{
+    top:0;
+    padding-top:env(safe-area-inset-top);
+    height:calc(var(--topbar) + env(safe-area-inset-top));
+    min-height:calc(var(--topbar) + env(safe-area-inset-top));
+  }
+  .page{
+    min-height:calc(100dvh - var(--topbar) - env(safe-area-inset-top));
+    padding-bottom:calc(104px + env(safe-area-inset-bottom));
+  }
+  .mobile-bottom-nav{
+    padding-bottom:max(7px,env(safe-area-inset-bottom));
+  }
+  .menu-btn.view-menu-btn{
+    display:grid;
+    width:40px;
+    height:40px;
+    border-radius:13px;
+    background:rgba(255,255,255,.52)!important;
+  }
+  .topbar-title{min-width:0;flex:1}
+  .topbar-title h1{font-size:15px}
+
+  .login-shell{min-height:100dvh;padding-top:max(26px,env(safe-area-inset-top));padding-bottom:max(26px,env(safe-area-inset-bottom))}
+  .login-brand{align-items:flex-start}
+  .login-card-clear{width:100%}
+
+  .agenda-list.ios-scroll-stack>.ios-stack-card,
+  .packages-list.ios-scroll-stack>.ios-stack-card,
+  .clients-grid.ios-scroll-stack>.ios-stack-card,
+  .card-grid.ios-scroll-stack>.ios-stack-card,
+  .products-grid.ios-scroll-stack>.ios-stack-card,
+  .photo-grid.ios-scroll-stack>.ios-stack-card{
+    position:sticky;
+    top:var(--ios-stack-top);
+    z-index:var(--stack-order,1);
+    margin-bottom:14px;
+    background:rgba(255,251,253,.94)!important;
+    -webkit-backdrop-filter:blur(30px) saturate(138%);
+    backdrop-filter:blur(30px) saturate(138%);
+    box-shadow:0 18px 40px rgba(117,73,91,.12)!important;
+  }
+  .agenda-list.ios-scroll-stack>.ios-stack-card::before,
+  .packages-list.ios-scroll-stack>.ios-stack-card::before,
+  .clients-grid.ios-scroll-stack>.ios-stack-card::before,
+  .card-grid.ios-scroll-stack>.ios-stack-card::before,
+  .products-grid.ios-scroll-stack>.ios-stack-card::before,
+  .photo-grid.ios-scroll-stack>.ios-stack-card::before{
+    content:"";
+    position:absolute;
+    inset:-10px -4px auto;
+    height:16px;
+    background:linear-gradient(180deg,rgba(248,239,244,.98),rgba(248,239,244,0));
+    pointer-events:none;
+  }
+
+  /* cartões compactos continuam em grade; recebem apenas o reveal, sem colisão. */
+  .compact-grid.ios-scroll-stack>.ios-stack-card{position:relative;top:auto;z-index:auto}
+}
+
+@media(max-width:600px){
+  .topbar{padding-inline:10px}
+  .topbar-title small{max-width:120px}
+  .profile-login-clear{padding:12px;border-radius:18px}
+  .profile-login-clear .profile-avatar{width:44px;height:44px}
+  .ios-settings-main>.ios-stack-card,
+  .ios-settings-aside>.ios-stack-card{padding:6px;margin:-6px;border-radius:24px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .ios-scroll-reveal{opacity:1!important;transform:none!important;transition:none!important}
+  .nav-item:hover{transform:none!important}
+}

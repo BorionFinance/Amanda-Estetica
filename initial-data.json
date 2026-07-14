@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "appId": "amanda-clinica",
+  "updatedAt": "2026-07-13T16:45:06",
+  "profiles": [
+    {
+      "id": "amanda",
+      "name": "Amanda",
+      "role": "Biomédica Esteta",
+      "color": "#c85f86",
+      "pin": "",
+      "clinic": {
+        "clinicName": "Amanda Braz Estética Avançada",
+        "document": "",
+        "crbm": "",
+        "phone": "",
+        "email": "",
+        "instagram": "",
+        "address": "",
+        "number": "",
+        "neighborhood": "",
+        "city": "",
+        "zip": "",
+        "defaultNote": "Obrigada pela confiança. Em caso de dúvidas, entre em contato."
+      },
+      "createdAt": "2026-07-13T16:45:06"
+    }
+  ],
+  "activeProfileId": "amanda",
+  "dataByProfile": {
+    "amanda": {
+      "clients": [],
+      "products": [],
+      "protocols": [],
+      "packages": [],
+      "appointments": [],
+      "attendances": [],
+      "anamneses": [],
+      "consents": [],
+      "photos": [],
+      "finance": [],
+      "settings": {
+        "accent": "rose",
+        "weekStartsMonday": true,
+        "autosaveFolder": true,
+        "autosaveGoogle": true,
+        "appointmentReminderMinutes": 1440
+      },
+      "audit": [
+        {
+          "id": "initial",
+          "date": "2026-07-13T16:45:06",
+          "action": "Base criada",
+          "detail": "Importe o JSON privado da migração para carregar os dados da planilha."
+        }
+      ]
+    }
+  }
+}

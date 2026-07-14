@@ -1,0 +1,259 @@
+/**
+ * Amanda Estética v1.5.7 — continuidade visual, filtros expansíveis e pilha universal.
+ * Arquivo final da cascata: contém apenas sobrescritas visuais/comportamentais.
+ */
+
+.sr-only{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  padding:0!important;
+  margin:-1px!important;
+  overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;
+  border:0!important;
+}
+
+/* =========================================================
+   Continuidade: menu, topo e conteúdo formam uma única página
+   ========================================================= */
+.sidebar,
+.topbar,
+.sidebar-brand,
+.sidebar-footer{
+  border:0!important;
+  box-shadow:none!important;
+}
+.sidebar{
+  background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,246,251,.075) 52%,rgba(249,229,239,.055))!important;
+}
+.sidebar::before,.sidebar::after{opacity:.08!important}
+.sidebar-brand{background:transparent!important}
+.topbar{
+  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.045))!important;
+}
+.app-main,.page{background:transparent!important}
+.global-search{
+  background:rgba(255,255,255,.16)!important;
+  border-color:rgba(255,255,255,.24)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.24)!important;
+}
+.global-search:focus-within{background:rgba(255,255,255,.31)!important}
+.topbar-title::before,.topbar-title::after,.sidebar-brand::before,.sidebar-brand::after{display:none!important}
+
+/* Tela de perfis sem caixa branca: somente conteúdo e resposta sutil ao toque. */
+.login-card-clear,
+.profile-login-clear,
+.create-profile-clear{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.login-card-clear{padding:0!important}
+.profile-login-clear{
+  padding:13px 4px!important;
+  border-radius:20px!important;
+}
+.profile-login-clear:hover,
+.profile-login-clear:focus-visible{
+  background:rgba(255,255,255,.12)!important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.20)!important;
+}
+.create-profile-clear{
+  padding-inline:4px!important;
+  opacity:.68;
+}
+.create-profile-clear:hover,.create-profile-clear:focus-visible{opacity:1;background:transparent!important}
+
+/* =========================================================
+   Filtro recolhido: um único ícone; no hover/toque abre as opções
+   ========================================================= */
+.expandable-filter{
+  --filter-trigger:42px;
+  --filter-gap:6px;
+  position:relative;
+  width:var(--filter-trigger);
+  height:var(--filter-trigger);
+  flex:0 0 var(--filter-trigger);
+  z-index:28;
+  isolation:isolate;
+}
+.expandable-filter-trigger{
+  position:absolute;
+  inset:0;
+  z-index:3;
+  width:var(--filter-trigger);
+  height:var(--filter-trigger);
+  border:1px solid rgba(255,255,255,.58);
+  border-radius:999px;
+  display:grid;
+  place-items:center;
+  color:var(--rose-dark);
+  background:linear-gradient(145deg,rgba(255,255,255,.76),rgba(246,220,231,.55));
+  box-shadow:0 9px 22px rgba(139,82,107,.10),inset 0 1px 0 rgba(255,255,255,.88);
+  transition:transform 220ms var(--ui-ease),opacity 150ms ease,box-shadow 220ms ease;
+}
+.expandable-filter-trigger:hover{transform:scale(1.045);box-shadow:0 12px 27px rgba(139,82,107,.14),inset 0 1px 0 rgba(255,255,255,.92)}
+.expandable-filter-trigger:active{transform:scale(.97)}
+.expandable-filter-options{
+  position:absolute;
+  right:0;
+  top:0;
+  z-index:2;
+  min-height:var(--filter-trigger);
+  display:flex;
+  align-items:center;
+  gap:3px;
+  width:max-content;
+  max-width:min(78vw,390px);
+  padding:4px calc(var(--filter-trigger) + var(--filter-gap)) 4px 4px;
+  border-radius:999px;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:translate3d(12px,0,0) scaleX(.62);
+  transform-origin:right center;
+  background:rgba(255,249,252,.96);
+  border:1px solid rgba(255,255,255,.82);
+  box-shadow:0 16px 38px rgba(111,70,88,.13),inset 0 1px 0 rgba(255,255,255,.94);
+  transition:transform 250ms var(--ui-ease),opacity 150ms ease,visibility 0s linear 250ms;
+}
+.expandable-filter.is-open .expandable-filter-options,
+.expandable-filter:hover:not(.is-suppressed) .expandable-filter-options,
+.expandable-filter:focus-within:not(.is-suppressed) .expandable-filter-options{
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+  transform:translate3d(0,0,0) scaleX(1);
+  transition:transform 250ms var(--ui-ease),opacity 150ms ease,visibility 0s;
+}
+.expandable-filter.is-open .expandable-filter-trigger,
+.expandable-filter:hover:not(.is-suppressed) .expandable-filter-trigger,
+.expandable-filter:focus-within:not(.is-suppressed) .expandable-filter-trigger{
+  transform:scale(.93);
+  opacity:.72;
+}
+.expandable-filter-option{
+  min-height:34px;
+  border:0;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 11px;
+  color:#75666f;
+  background:transparent;
+  font-size:10px;
+  font-weight:720;
+  white-space:nowrap;
+  transition:background-color 170ms ease,color 170ms ease,transform 180ms var(--ui-ease),box-shadow 180ms ease;
+}
+.expandable-filter-option:hover{background:rgba(247,226,235,.62);color:var(--rose-dark);transform:translateY(-1px)}
+.expandable-filter-option.active{
+  color:var(--rose-dark);
+  background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(244,213,226,.76));
+  box-shadow:0 6px 15px rgba(198,105,145,.12),inset 0 1px 0 rgba(255,255,255,.92);
+}
+.expandable-filter-option-icon{display:grid;place-items:center}
+.expandable-filter-option:active{transform:scale(.97)}
+.finance-filter-expandable .expandable-filter-options{min-width:205px}
+
+/* Atualização parcial sem apagar/piscar o bloco. */
+[data-view-content].content-refreshing{
+  opacity:1!important;
+  transform:none!important;
+  transition:none!important;
+}
+
+/* =========================================================
+   Pilha universal: listas, colunas e quadrados se unem no scroll
+   sem blur e sem permanecer atrás da página.
+   ========================================================= */
+.ios-universal-stack{
+  position:relative!important;
+  isolation:isolate;
+  overflow:clip!important;
+  padding-bottom:28px!important;
+}
+.ios-universal-stack:not(.ios-settings-main):not(.ios-settings-aside) > .ios-universal-stack-item{
+  position:sticky!important;
+  top:calc(var(--ios-stack-top,88px) + var(--stack-offset,0px))!important;
+  z-index:var(--stack-order,1)!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  transform:none!important;
+  will-change:auto!important;
+  background:rgba(255,250,253,.975)!important;
+  box-shadow:0 14px 30px rgba(112,72,90,.095)!important;
+}
+.ios-universal-stack.list-panel > .ios-universal-stack-item{
+  margin:0 0 8px!important;
+  border:1px solid rgba(255,255,255,.80)!important;
+  border-radius:17px!important;
+}
+.ios-universal-stack.clients-grid > .ios-universal-stack-item,
+.ios-universal-stack.card-grid > .ios-universal-stack-item,
+.ios-universal-stack.products-grid > .ios-universal-stack-item,
+.ios-universal-stack.compact-grid > .ios-universal-stack-item,
+.ios-universal-stack.packages-list > .ios-universal-stack-item,
+.ios-universal-stack.photo-grid > .ios-universal-stack-item,
+.ios-universal-stack.agenda-list > .ios-universal-stack-item{
+  margin-bottom:14px!important;
+}
+.ios-universal-stack:not(.ios-settings-main):not(.ios-settings-aside) > .ios-universal-stack-item:hover{
+  transform:none!important;
+}
+
+/* Mantém títulos e textos acima da próxima camada, sem sobreposição ilegível. */
+.ios-universal-stack-item .row-main,
+.ios-universal-stack-item header,
+.ios-universal-stack-item footer,
+.ios-universal-stack-item h3,
+.ios-universal-stack-item p{
+  position:relative;
+  z-index:1;
+}
+
+@media(max-width:860px){
+  .sidebar{
+    background:linear-gradient(180deg,rgba(255,251,253,.88),rgba(249,233,242,.84))!important;
+  }
+  .topbar{background:linear-gradient(180deg,rgba(255,255,255,.24),rgba(255,255,255,.10))!important}
+  .expandable-filter-options{
+    left:0;
+    right:auto;
+    max-width:calc(100vw - 28px);
+    padding:4px 4px 4px calc(var(--filter-trigger) + var(--filter-gap));
+    transform-origin:left center;
+    transform:translate3d(-12px,0,0) scaleX(.62);
+  }
+  .expandable-filter.is-open .expandable-filter-options,
+  .expandable-filter:hover:not(.is-suppressed) .expandable-filter-options,
+  .expandable-filter:focus-within:not(.is-suppressed) .expandable-filter-options{
+    transform:translate3d(0,0,0) scaleX(1);
+  }
+  .expandable-filter-option{padding-inline:9px}
+  .ios-universal-stack:not(.ios-settings-main):not(.ios-settings-aside) > .ios-universal-stack-item{
+    top:calc(var(--ios-stack-top,72px) + var(--stack-offset,0px))!important;
+    background:rgba(255,251,253,.985)!important;
+    box-shadow:0 12px 25px rgba(112,72,90,.10)!important;
+  }
+  .compact-grid.ios-universal-stack > .ios-universal-stack-item{
+    position:sticky!important;
+    top:calc(var(--ios-stack-top,72px) + var(--stack-offset,0px))!important;
+    z-index:var(--stack-order,1)!important;
+  }
+}
+
+@media(max-width:520px){
+  .expandable-filter-option{min-height:33px;padding:6px 8px;font-size:9px;gap:5px}
+  .expandable-filter-option .icon{width:15px;height:15px}
+  .finance-filter-expandable .expandable-filter-options{min-width:auto}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .expandable-filter-trigger,.expandable-filter-options,.expandable-filter-option{transition:none!important}
+}

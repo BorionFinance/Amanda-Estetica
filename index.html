@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#c85f86">
+  <meta name="description" content="Gestão da clínica Amanda Braz Estética Avançada: agenda, clientes, prontuários, protocolos, fotos e financeiro.">
+  <title>Amanda Estética</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="css/00-base.css">
+  <link rel="stylesheet" href="css/10-views-filters.css">
+  <link rel="stylesheet" href="css/20-theme-premium-ios.css">
+  <link rel="stylesheet" href="css/30-pro-layout.css">
+  <link rel="stylesheet" href="css/40-transitions-ios.css">
+  <link rel="stylesheet" href="css/50-fixed-menu-depth.css">
+  <link rel="stylesheet" href="css/60-transparency-menu.css">
+  <link rel="stylesheet" href="css/70-stack-scroll.css">
+  <link rel="stylesheet" href="css/80-liquid-interface.css">
+  <link rel="stylesheet" href="css/90-performance.css">
+  <link rel="stylesheet" href="css/95-performance-critical.css">
+  <link rel="stylesheet" href="css/96-performance-ultra.css">
+  <link rel="stylesheet" href="css/97-continuity-expandable-stack.css">
+  <link rel="stylesheet" href="css/98-lockscreen-clock.css">
+  <link rel="stylesheet" href="css/99-login-signature.css">
+  <link rel="stylesheet" href="css/100-integrity-relations.css">
+</head>
+<body>
+  <div id="root"></div>
+  <div id="modal-root"></div>
+  <div id="picker-root"></div>
+  <div id="toast-root" aria-live="polite"></div>
+  <script defer src="js/data/initial-data.js"></script>
+  <script defer src="js/services/storage.js"></script>
+  <script defer src="js/services/google-drive.js"></script>
+  <script defer src="js/core/00-config-icons.js"></script>
+  <script defer src="js/core/01-state-utils.js"></script>
+  <script defer src="js/core/08-integrity-relations.js"></script>
+  <script defer src="js/core/02-ui-components.js"></script>
+  <script defer src="js/core/03-shell-navigation.js"></script>
+  <script defer src="js/core/07-login-signature.js"></script>
+  <script defer src="js/views/00-dashboard.js"></script>
+  <script defer src="js/views/01-agenda-clients.js"></script>
+  <script defer src="js/views/02-clinical-catalog.js"></script>
+  <script defer src="js/views/03-finance-settings.js"></script>
+  <script defer src="js/core/06-fast-ui.js"></script>
+  <script defer src="js/forms/00-appointments-clients.js"></script>
+  <script defer src="js/forms/01-packages-attendance.js"></script>
+  <script defer src="js/forms/02-records-media.js"></script>
+  <script defer src="js/forms/03-products-profile.js"></script>
+  <script defer src="js/services/sync-backup.js"></script>
+  <script defer src="js/services/borion-interop-source.js?v=1.8.6"></script>
+  <script defer src="js/core/04-actions.js"></script>
+  <script defer src="js/core/05-events-boot.js"></script>
+  <script>window.addEventListener('load',()=>window.AmandaBorionInterop?.start(()=>STATE));</script>
+</body>
+</html>

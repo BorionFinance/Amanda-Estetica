@@ -1,0 +1,27 @@
+/** Amanda Estética v1.8.0 — integridade relacional e ações seguras */
+.btn.danger-soft{
+  color:var(--danger,#b8525f)!important;
+  background:rgba(255,246,248,.56)!important;
+  border-color:rgba(184,82,95,.18)!important;
+  box-shadow:none!important;
+}
+.btn.danger-soft:hover{background:rgba(255,235,240,.80)!important;border-color:rgba(184,82,95,.28)!important}
+.source-lock{
+  width:34px;height:34px;border-radius:10px;display:inline-grid;place-items:center;
+  color:var(--rose-dark);background:rgba(255,255,255,.32);border:1px solid rgba(255,255,255,.38);
+}
+.integrity-report{display:grid;gap:16px}
+.integrity-summary{display:flex;align-items:center;gap:12px;padding:16px;border-radius:18px;background:rgba(255,247,251,.75);border:1px solid rgba(255,255,255,.58)}
+.integrity-summary>svg{color:var(--rose-dark);flex:none}.integrity-summary strong,.integrity-summary small{display:block}.integrity-summary strong{font-size:15px}.integrity-summary small{font-size:10px;color:var(--muted);margin-top:4px}
+.integrity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.integrity-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;border-radius:13px;background:rgba(255,255,255,.46);border:1px solid rgba(255,255,255,.52)}
+.integrity-row span{font-size:10px;color:var(--muted)}.integrity-row strong{font-size:13px}.integrity-row.success strong{color:var(--success)}.integrity-row.warn strong{color:var(--warn)}.integrity-row.danger strong{color:var(--danger)}
+.package-detail-view{display:grid;gap:18px}.package-detail-view h4{margin:0 0 10px}.package-detail-view>.list-panel{box-shadow:none!important}
+.field>small,.field-help{font-size:8px;color:var(--muted);line-height:1.45}
+.record-card footer .row-actions,.product-card header .row-actions,.product-compact-card header .row-actions{display:flex;gap:4px;align-items:center}
+@media(max-width:600px){.integrity-grid{grid-template-columns:1fr}.login-auth-actions{display:grid;grid-template-columns:1fr 1fr}.login-auth-actions .btn{min-width:0}}
+.is-archived{opacity:.62;filter:saturate(.72)}
+.is-archived:hover{opacity:.84}
+.is-archived .stock-control button{pointer-events:none;opacity:.45}
+.stock-impact-preview{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.40);border:1px solid rgba(255,255,255,.50)}
+.stock-impact-preview>strong{display:block;font-size:10px;margin-bottom:7px}.stock-impact-preview>span,.stock-impact-preview>div span{display:block;font-size:9px;color:var(--muted);line-height:1.55}.stock-impact-preview>div span.danger{color:var(--danger);font-weight:700}

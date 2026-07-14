@@ -1,0 +1,223 @@
+/**
+ * Amanda Estética v1.5.6 — pente-fino visual e de performance.
+ * Prioridade: animações compostas por transform/opacity, modais leves,
+ * tipografia nativa refinada e seletores líquidos com uma única "gota" móvel.
+ */
+
+:root{
+  --ui-ease:cubic-bezier(.22,1,.36,1);
+  --ui-ease-out:cubic-bezier(.4,0,1,1);
+  --ui-fast:140ms;
+  --ui-normal:240ms;
+  --ui-slow:320ms;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI Variable Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+html{
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  text-rendering:optimizeLegibility;
+  font-kerning:normal;
+  font-feature-settings:"kern" 1,"liga" 1,"calt" 1;
+}
+body{font-weight:400;letter-spacing:-.006em}
+h1,h2,h3,h4,.topbar-title h1,.pro-dashboard-heading h2,.login-brand h1{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI Variable Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-weight:680;
+  letter-spacing:-.035em;
+  text-wrap:balance;
+}
+button,input,select,textarea{font-family:inherit}
+button{letter-spacing:-.008em}
+.eyebrow{letter-spacing:.115em;font-weight:780}
+.section-head p,.panel-header p,.field small,.muted{line-height:1.48}
+
+/* Evita camadas GPU permanentes em centenas de controles. */
+.btn,.icon-btn,.nav-item,.profile-mini,.profile-login,.view-mode-button,
+.filter-segmented button,.mobile-bottom-nav button,.top-profile,.ios-device-mode-option,
+.client-card,.protocol-card,.package-card,.product-card,.record-card,.photo-card,
+.client-compact-card,.protocol-compact-card,.product-compact-card{
+  will-change:auto!important;
+  transform:none;
+  backface-visibility:visible;
+}
+@media(hover:hover) and (pointer:fine){
+  .btn:hover,.icon-btn:hover,.nav-item:hover,.top-profile:hover,.ios-device-mode-option:hover{transform:translate3d(0,-1px,0)}
+  .client-card:hover,.protocol-card:hover,.package-card:hover,.product-card:hover,.record-card:hover,.photo-card:hover,
+  .client-compact-card:hover,.protocol-compact-card:hover,.product-compact-card:hover{transform:translate3d(0,-2px,0)}
+}
+
+/* Vidro caro apenas onde realmente faz diferença. */
+.sidebar,.topbar,.mobile-bottom-nav{
+  -webkit-backdrop-filter:blur(11px) saturate(118%)!important;
+  backdrop-filter:blur(11px) saturate(118%)!important;
+}
+.global-search,.view-switcher[data-liquid-control],.filter-segmented[data-liquid-control],.ios-interface-card,.check-field,
+.panel,.list-panel,.pro-card,.stat-card,.client-card,.protocol-card,.package-card,
+.product-card,.record-card,.photo-card,.client-compact-card,.protocol-compact-card,
+.product-compact-card,.agenda-day,.hero-card,.login-card{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+
+/* =========================================================
+   Modal ultraleve: sem blur do cenário inteiro.
+   O blur no backdrop era o principal gargalo ao abrir cadastros.
+   ========================================================= */
+#modal-root{
+  position:fixed!important;
+  inset:0;
+  z-index:100;
+  pointer-events:none;
+  contain:layout style;
+}
+#modal-root>.modal-backdrop{pointer-events:auto}
+body.modal-open{overflow:visible!important}
+body.modal-open .sidebar,
+body.modal-open .topbar,
+body.modal-open .mobile-bottom-nav{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.modal-backdrop{
+  opacity:0;
+  background:rgba(43,31,38,.30)!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  transition:opacity var(--ui-fast) linear!important;
+  animation:none!important;
+  contain:strict;
+  overscroll-behavior:contain;
+}
+.modal-backdrop.is-open{opacity:1}
+.modal-backdrop.is-closing{opacity:0;pointer-events:none}
+.modal{
+  opacity:0;
+  transform:translate3d(0,10px,0) scale(.994);
+  transform-origin:50% 48%;
+  animation:none!important;
+  transition:transform 180ms var(--ui-ease),opacity var(--ui-fast) ease-out!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  background:linear-gradient(180deg,rgba(255,255,255,.985),rgba(255,248,252,.985))!important;
+  border:1px solid rgba(255,255,255,.94)!important;
+  box-shadow:0 24px 64px rgba(55,33,43,.20)!important;
+  contain:layout paint style;
+  isolation:isolate;
+  will-change:auto!important;
+}
+.modal-backdrop.is-open .modal{opacity:1;transform:translate3d(0,0,0) scale(1)}
+.modal-backdrop.is-closing .modal{opacity:0;transform:translate3d(0,7px,0) scale(.996)}
+.modal form{overflow:hidden;contain:layout style}
+.modal-header,.modal-footer{
+  background:rgba(255,252,254,.97)!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.modal-body{
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  contain:layout style;
+}
+.modal-body>.form-grid,.modal-body>.details-grid,.modal-body>.protocol-detail{contain:layout style}
+@media(max-width:600px){
+  .modal{transform:translate3d(0,18px,0) scale(.998);transform-origin:50% 100%;box-shadow:0 -14px 42px rgba(55,33,43,.16)!important}
+  .modal-backdrop.is-open .modal{transform:translate3d(0,0,0) scale(1)}
+  .modal-backdrop{background:rgba(43,31,38,.26)!important}
+}
+
+/* =========================================================
+   Seletor líquido: uma única gota desliza sob os rótulos.
+   Não há recriação visual do controle ao trocar opção.
+   ========================================================= */
+.view-switcher[data-liquid-control],.filter-segmented[data-liquid-control]{
+  --liquid-count:3;
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  align-items:stretch;
+  gap:0!important;
+  min-width:max-content;
+  padding:4px!important;
+  overflow:hidden!important;
+  isolation:isolate;
+  background:rgba(255,255,255,.38)!important;
+  border:1px solid rgba(255,255,255,.72)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.82),0 7px 18px rgba(113,73,90,.055)!important;
+  contain:layout paint style;
+}
+.liquid-selection{
+  position:absolute;
+  z-index:0;
+  left:4px;
+  top:4px;
+  bottom:4px;
+  width:calc((100% - 8px) / 3);
+  border-radius:999px;
+  background:linear-gradient(145deg,rgba(255,255,255,.94),rgba(244,211,225,.78));
+  border:1px solid rgba(255,255,255,.92);
+  box-shadow:0 7px 17px rgba(198,105,145,.14),inset 0 1px 0 rgba(255,255,255,.96);
+  transform:translate3d(0,0,0);
+  transition:transform var(--ui-normal) var(--ui-ease);
+  pointer-events:none;
+}
+[data-liquid-index="1"]>.liquid-selection{transform:translate3d(100%,0,0)}
+[data-liquid-index="2"]>.liquid-selection{transform:translate3d(200%,0,0)}
+.view-switcher[data-liquid-control] .view-mode-button,.filter-segmented[data-liquid-control] button{
+  z-index:1;
+  min-width:0;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  transform:none!important;
+  transition:color 170ms ease,opacity 170ms ease!important;
+}
+.view-switcher[data-liquid-control] .view-mode-button::before,.filter-segmented[data-liquid-control] button::before{display:none!important}
+.view-switcher[data-liquid-control] .view-mode-button.active,.filter-segmented[data-liquid-control] button.active{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  transform:none!important;
+  color:var(--rose-dark)!important;
+}
+.view-switcher[data-liquid-control] .view-mode-button:not(.active),.filter-segmented[data-liquid-control] button:not(.active){color:#81727a!important}
+.view-switcher[data-liquid-control] .view-mode-button:active,.filter-segmented[data-liquid-control] button:active{opacity:.66;transform:none!important}
+
+/* Atualização parcial: só o conteúdo inferior muda, sem tela branca. */
+[data-view-content]{
+  transition:opacity 110ms ease-out,transform 160ms var(--ui-ease);
+  contain:layout style;
+}
+[data-view-content].content-refreshing{opacity:.985;transform:translate3d(0,2px,0)}
+.attendance-period-slot{display:contents}
+
+/* Rolagem e listas. */
+*{scrollbar-width:thin;scrollbar-color:rgba(184,123,150,.24) transparent}
+*::-webkit-scrollbar{width:4px;height:4px}
+*::-webkit-scrollbar-thumb{background:rgba(184,123,150,.27);border-radius:999px;border:0}
+*::-webkit-scrollbar-thumb:hover{background:rgba(184,123,150,.40)}
+.list-row,.attendance-row,.finance-row,.product-row,.appointment-card,.timeline-row{
+  contain:layout paint style;
+}
+
+/* Transições de páginas menores e só no compositor. */
+.page-enter-right{animation:pageEnterRightUltra 260ms var(--ui-ease) both!important}
+.page-enter-left{animation:pageEnterLeftUltra 260ms var(--ui-ease) both!important}
+.page-exit-left{animation:pageExitLeftUltra 120ms var(--ui-ease-out) both!important}
+.page-exit-right{animation:pageExitRightUltra 120ms var(--ui-ease-out) both!important}
+.page-enter-soft{animation:pageEnterSoftUltra 190ms var(--ui-ease) both!important}
+@keyframes pageEnterRightUltra{from{opacity:.88;transform:translate3d(22px,0,0)}to{opacity:1;transform:none}}
+@keyframes pageEnterLeftUltra{from{opacity:.88;transform:translate3d(-22px,0,0)}to{opacity:1;transform:none}}
+@keyframes pageExitLeftUltra{to{opacity:.64;transform:translate3d(-12px,0,0)}}
+@keyframes pageExitRightUltra{to{opacity:.64;transform:translate3d(12px,0,0)}}
+@keyframes pageEnterSoftUltra{from{opacity:.92;transform:translate3d(0,5px,0)}to{opacity:1;transform:none}}
+
+/* Em telas sensíveis ao toque, retire estados hover e blur excedente. */
+@media(max-width:860px), (pointer:coarse){
+  .sidebar{background:linear-gradient(180deg,rgba(255,252,254,.992),rgba(254,244,249,.987) 52%,rgba(249,232,241,.982))!important}
+  .sidebar,.topbar,.mobile-bottom-nav{-webkit-backdrop-filter:blur(9px) saturate(112%)!important;backdrop-filter:blur(9px) saturate(112%)!important}
+  .view-mode-button span{display:none}
+  .view-switcher[data-liquid-control],.filter-segmented[data-liquid-control]{min-width:0;width:min(100%,330px)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .liquid-selection,[data-view-content],.modal,.modal-backdrop{transition:none!important}
+}

@@ -1,0 +1,135 @@
+/**
+ * Amanda Estética — Transparência do menu/topbar e seleção sutil.
+ * Ordem de carregamento importante: este arquivo faz parte da cascata modular.
+ */
+
+/* =========================================================
+   v1.4.2 — Transparência real, menu iOS e rolagem sem sobreposição
+   ========================================================= */
+:root{
+  --sidebar-glass:linear-gradient(180deg,
+    rgba(255,255,255,.23) 0%,
+    rgba(255,248,252,.13) 48%,
+    rgba(250,232,241,.10) 100%);
+}
+
+/* Barra lateral e topo deixam o gradiente rosa respirar. */
+.sidebar{
+  background:var(--sidebar-glass)!important;
+  border-right:0!important;
+  box-shadow:8px 0 30px rgba(105,70,87,.025)!important;
+  -webkit-backdrop-filter:blur(30px) saturate(132%);
+  backdrop-filter:blur(30px) saturate(132%);
+}
+.sidebar::after{opacity:.30}
+.sidebar-brand,
+.sidebar-footer{
+  background:transparent!important;
+  border:0!important;
+}
+.topbar{
+  background:linear-gradient(180deg,rgba(255,255,255,.24),rgba(255,255,255,.10))!important;
+  border-bottom:1px solid rgba(255,255,255,.22)!important;
+  box-shadow:0 8px 26px rgba(105,70,87,.025)!important;
+  -webkit-backdrop-filter:blur(30px) saturate(135%);
+  backdrop-filter:blur(30px) saturate(135%);
+}
+.global-search{
+  background:rgba(255,255,255,.24)!important;
+  border:1px solid rgba(255,255,255,.28)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 7px 20px rgba(105,70,87,.025)!important;
+}
+.global-search:focus-within{
+  background:rgba(255,255,255,.42)!important;
+  border-color:rgba(255,255,255,.50)!important;
+  box-shadow:0 0 0 4px rgba(212,95,146,.07),0 10px 26px rgba(105,70,87,.05)!important;
+}
+
+/* Menu no mesmo espírito da seleção de perfil da tela de entrada. */
+.nav-group>span{opacity:.68}
+.nav-item{
+  margin:3px 0;
+  border:1px solid transparent;
+  background:transparent!important;
+  box-shadow:none!important;
+  color:#655a61;
+  opacity:.82;
+}
+.nav-item:hover{
+  opacity:1;
+  background:rgba(255,255,255,.24)!important;
+  border-color:rgba(255,255,255,.27)!important;
+  box-shadow:0 10px 24px rgba(117,73,91,.045)!important;
+}
+.nav-item.active{
+  opacity:1;
+  color:var(--rose-dark)!important;
+  background:linear-gradient(135deg,rgba(255,255,255,.43),rgba(255,244,249,.27))!important;
+  border-color:rgba(255,255,255,.48)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.50),0 10px 24px rgba(117,73,91,.055)!important;
+}
+.nav-item.active::before{
+  content:"";
+  position:absolute;
+  left:5px;
+  top:50%;
+  width:4px;
+  height:18px;
+  border-radius:999px;
+  background:linear-gradient(180deg,#e77aa4,#c94f80);
+  transform:translateY(-50%);
+  box-shadow:0 3px 10px rgba(201,79,128,.28);
+}
+
+/* Configurações: mantém a animação de entrada, mas os cartões não ficam presos
+   nem reaparecem no fundo enquanto a página continua descendo. */
+.ios-settings-main>.ios-stack-card,
+.ios-settings-aside>.ios-stack-card{
+  position:relative!important;
+  top:auto!important;
+  z-index:auto!important;
+  margin:0!important;
+  padding:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  box-shadow:none!important;
+}
+.ios-settings-main>.ios-stack-card+.ios-stack-card,
+.ios-settings-aside>.ios-stack-card+.ios-stack-card{margin-top:18px!important}
+.ios-settings-main>.ios-stack-card>h3,
+.ios-settings-aside>.ios-stack-card>h3{
+  width:auto!important;
+  max-width:none!important;
+  padding:0!important;
+  margin:0 0 7px 12px!important;
+  border-radius:0!important;
+  background:transparent!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.ios-settings-layout,
+.ios-settings-main,
+.ios-settings-aside{overflow:visible}
+
+/* Mobile segue transparente, mas ainda legível ao abrir o menu. */
+@media(max-width:860px){
+  .sidebar{
+    background:linear-gradient(180deg,rgba(255,251,253,.46),rgba(250,236,244,.32))!important;
+    -webkit-backdrop-filter:blur(34px) saturate(135%);
+    backdrop-filter:blur(34px) saturate(135%);
+  }
+  .topbar{
+    background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.12))!important;
+  }
+  .global-search{
+    background:rgba(255,255,255,.40)!important;
+  }
+  .mobile-bottom-nav{
+    background:rgba(255,250,253,.44)!important;
+    border-top:1px solid rgba(255,255,255,.32)!important;
+    -webkit-backdrop-filter:blur(28px) saturate(135%);
+    backdrop-filter:blur(28px) saturate(135%);
+  }
+}
