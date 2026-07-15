@@ -13,6 +13,7 @@
   const SCOPES = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file';
   const DATA_FILE = 'Amanda_Clinica_Dados.json';
   const USER_KEY = 'amanda_clinica_gdrive_user';
+  const DATA_FILE_ID_PREFIX = 'amanda_clinica_gdrive_data_file_';
   const FOLDER_PREFIX = 'amanda_clinica_gdrive_folder_';
   const SUBFOLDER_PREFIX = 'amanda_clinica_gdrive_subfolder_';
   const INTEGRATION_FILE_PREFIX = 'amanda_clinica_gdrive_integration_file_';
@@ -23,6 +24,7 @@
   const folderInflight = new Map();
   const integrationFileInflight = new Map();
   const structureInflight = new Map();
+  const dataFileInflight = new Map();
   const resolvedStructures = new Map();
   let connectionInflight = null;
 
@@ -145,6 +147,20 @@
 
   function scopedStorageKey(prefix, parentId, name) {
     return `${prefix}${parentId}_${encodeURIComponent(name)}`;
+  }
+
+  function dataFileStorageKey(rootId) { return `${DATA_FILE_ID_PREFIX}${rootId}`; }
+  function rememberDataFile(rootId, file) {
+    if (!file?.id) return file || null;
+    localStorage.setItem(dataFileStorageKey(rootId), file.id);
+    return file;
+  }
+  function forgetDataFile(rootId) {
+    localStorage.removeItem(dataFileStorageKey(rootId));
+  }
+  function isExpectedDataFile(meta, parentId) {
+    return !!meta && !meta.trashed && meta.name === DATA_FILE &&
+      meta.mimeType === 'application/json' && (meta.parents || []).includes(parentId);
   }
 
   function structureStorageKey(rootId) { return `${STRUCTURE_PREFIX}${rootId}`; }
@@ -281,6 +297,54 @@
     }).finally(() => structureInflight.delete(rootId));
     structureInflight.set(rootId, promise);
     return await promise;
+  }
+
+  async function resolveDataFileUncached(folderId) {
+    const cachedId = localStorage.getItem(dataFileStorageKey(folderId));
+    if (cachedId) {
+      try {
+        const meta = await getDriveObjectMeta(cachedId);
+        if (isExpectedDataFile(meta, folderId)) return rememberDataFile(folderId, meta);
+      } catch (error) {
+        if (![403, 404].includes(error.status)) console.warn('[GOOGLE_DRIVE] Arquivo principal em cache inválido:', error);
+      }
+      forgetDataFile(folderId);
+    }
+
+    const matches = await findChildren(folderId, DATA_FILE, 'application/json');
+    if (!matches.length) return null;
+    const ordered = [...matches].sort((a, b) => {
+      const modified = new Date(b.modifiedTime || 0) - new Date(a.modifiedTime || 0);
+      if (modified) return modified;
+      return new Date(a.createdTime || 0) - new Date(b.createdTime || 0);
+    });
+    if (ordered.length > 1) {
+      console.warn(`[GOOGLE_DRIVE] Existem ${ordered.length} arquivos principais chamados “${DATA_FILE}”. O mais recentemente modificado será reutilizado.`);
+    }
+    return rememberDataFile(folderId, ordered[0]);
+  }
+
+  async function resolveDataFile(folderId) {
+    if (dataFileInflight.has(folderId)) return await dataFileInflight.get(folderId);
+    const promise = withCrossTabLock(`amanda-drive-main-file-resolve:${folderId}`, () => resolveDataFileUncached(folderId))
+      .finally(() => dataFileInflight.delete(folderId));
+    dataFileInflight.set(folderId, promise);
+    return await promise;
+  }
+
+  async function saveDataFile(folderId, state) {
+    return await withCrossTabLock(`amanda-drive-main-file-save:${folderId}`, async () => {
+      let file = await resolveDataFileUncached(folderId);
+      if (!file) {
+        for (const delay of [500, 1200, 2400]) {
+          await sleep(delay);
+          file = await resolveDataFileUncached(folderId);
+          if (file) break;
+        }
+      }
+      file = file ? await updateJsonFile(file.id, state) : await createJsonFile(folderId, DATA_FILE, state);
+      return rememberDataFile(folderId, file);
+    });
   }
 
   async function resolveIntegrationFileUncached(folderId, name, createObject = null) {
@@ -446,14 +510,13 @@
 
     async findDataFile() {
       const { folderId } = await this.ensureConnection(false);
-      this.currentFile = await findChild(folderId, DATA_FILE, 'application/json');
+      this.currentFile = await resolveDataFile(folderId);
       return this.currentFile;
     },
 
     async save(state, options = {}) {
       const { folderId } = await this.ensureConnection(options.interactive === true);
-      let file = this.currentFile || await findChild(folderId, DATA_FILE, 'application/json');
-      file = file ? await updateJsonFile(file.id, state) : await createJsonFile(folderId, DATA_FILE, state);
+      const file = await saveDataFile(folderId, state);
       this.currentFile = file;
       localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
 
@@ -514,6 +577,7 @@
       integrationFileInflight.clear();
       structureInflight.clear();
       resolvedStructures.clear();
+      dataFileInflight.clear();
       connectionInflight = null;
       Auth.signOut();
     }

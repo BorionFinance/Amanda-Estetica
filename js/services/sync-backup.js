@@ -1,56 +1,70 @@
 'use strict';
 
+let manualSaveInflight = null;
+let connectGoogleInflight = null;
+let syncGoogleInflight = null;
+
 /**
  * Amanda Estética — Salvamento manual, Google Drive, pasta local, backups e exportações.
  * Arquivo modular: edite somente esta área quando a mudança for específica deste módulo.
  */
 
 async function manualSave() {
-    updateSaveStatus('Salvando…','warn');
-    await ClinicStorage.save(STATE);
-    await ClinicStorage.createLocalBackup(STATE,'manual');
-    const saved=['navegador'];
-    const failures=[];
+    if (manualSaveInflight) return await manualSaveInflight;
+    manualSaveInflight = (async () => {
+      updateSaveStatus('Salvando…','warn');
+      await ClinicStorage.save(STATE);
+      await ClinicStorage.createLocalBackup(STATE,'manual');
+      const saved=['navegador'];
+      const failures=[];
 
-    if(window.GoogleDriveClinic?.isConfigured?.()){
-      try{
-        await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual'});
-        saved.push('Google Drive');
-      }catch(error){failures.push(`Google Drive: ${error.message}`);}
-    }
-
-    try{
-      const handle=await ClinicStorage.getFolderHandle();
-      if(handle){
-        await ClinicStorage.saveToFolder(STATE,{handle,requestPermission:true,backup:true,reason:'manual'});
-        saved.push('pasta do computador');
+      if(window.GoogleDriveClinic?.isConfigured?.()){
+        try{
+          await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual'});
+          saved.push('Google Drive');
+        }catch(error){failures.push(`Google Drive: ${error.message}`);}
       }
-    }catch(error){failures.push(`Pasta: ${error.message}`);}
 
-    if(failures.length){
-      updateSaveStatus('Salvo local · sincronização parcial','warn');
-      toast(`Backup salvo em ${saved.join(' e ')}. ${failures.join(' · ')}`,'warn');
-    }else{
-      updateSaveStatus(saved.length>1?'Backup completo salvo':'Salvo localmente','ok');
-      toast(`Backup salvo em ${saved.join(' e ')}.`);
-    }
+      try{
+        const handle=await ClinicStorage.getFolderHandle();
+        if(handle){
+          await ClinicStorage.saveToFolder(STATE,{handle,requestPermission:true,backup:true,reason:'manual'});
+          saved.push('pasta do computador');
+        }
+      }catch(error){failures.push(`Pasta: ${error.message}`);}
+
+      if(failures.length){
+        updateSaveStatus('Salvo local · sincronização parcial','warn');
+        toast(`Backup salvo em ${saved.join(' e ')}. ${failures.join(' · ')}`,'warn');
+      }else{
+        updateSaveStatus(saved.length>1?'Backup completo salvo':'Salvo localmente','ok');
+        toast(`Backup salvo em ${saved.join(' e ')}.`);
+      }
+    })().finally(() => { manualSaveInflight = null; });
+    return await manualSaveInflight;
   }
 
   async function connectGoogle() {
-    try{
-      updateSaveStatus('Conectando ao Google…','warn');
-      const connection=await GoogleDriveClinic.connect(true);
-      await GoogleDriveClinic.save(STATE,{backup:true,reason:'primeira-conexao'});
-      updateSaveStatus('Google Drive conectado','ok');
-      toast(`Conta ${connection.user.email} conectada e primeiro backup criado.`);
-      renderView();
-    }catch(error){
-      updateSaveStatus('Salvo localmente','ok');
-      toast(error.message,'error');
-    }
+    if (connectGoogleInflight) return await connectGoogleInflight;
+    connectGoogleInflight = (async () => {
+      try{
+        updateSaveStatus('Conectando ao Google…','warn');
+        const connection=await GoogleDriveClinic.connect(true);
+        await GoogleDriveClinic.save(STATE,{backup:true,reason:'primeira-conexao'});
+        updateSaveStatus('Google Drive conectado','ok');
+        toast(`Conta ${connection.user.email} conectada e primeiro backup criado.`);
+        renderView();
+      }catch(error){
+        updateSaveStatus('Salvo localmente','ok');
+        toast(error.message,'error');
+      }
+    })().finally(() => { connectGoogleInflight = null; });
+    return await connectGoogleInflight;
   }
 
   async function syncGoogle() {
+    if (syncGoogleInflight) return await syncGoogleInflight;
+    syncGoogleInflight = (async () => {
     try{
       updateSaveStatus('Sincronizando com Google…','warn');
       const result=await GoogleDriveClinic.sync(STATE,{interactive:true,backup:true,reason:'sincronizacao'});
@@ -77,6 +91,8 @@ async function manualSave() {
       updateSaveStatus('Google Drive pendente','warn');
       toast(error.message,'error');
     }
+    })().finally(() => { syncGoogleInflight = null; });
+    return await syncGoogleInflight;
   }
 
   async function loadGoogle() {
