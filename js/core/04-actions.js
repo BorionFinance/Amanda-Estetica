@@ -14,7 +14,9 @@ async function handleAction(action, el) {
       'close-wheel-picker':closeWheelPicker,
       'confirm-wheel-picker':confirmWheelPicker,
       'enter-profile':()=>enterProfile(id),
-      'lock-app':()=>{sessionStorage.removeItem('amanda_clinica_unlocked');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
+      'enter-profile-google':()=>enterProfileWithGoogle(id,el),
+      'enter-profile-offline':()=>enterProfileOffline(id),
+      'lock-app':()=>{sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
       'create-profile':()=>openProfileForm(null),
       'profile-menu':()=>navTo('settings'),
       'edit-profile':()=>openProfileForm(activeProfile()),
@@ -96,18 +98,52 @@ async function handleAction(action, el) {
     if(map[action])await map[action]();
   }
 
-  function enterProfile(id) {
-    const p=STATE.profiles.find(x=>x.id===id)||activeProfile();
+  let LOGIN_GOOGLE_INFLIGHT = null;
+
+  function completeProfileUnlock(profile, authMode = 'google', authEmail = '') {
     const unlock=()=>{
-      STATE.activeProfileId=p.id;
+      STATE.activeProfileId=profile.id;
       sessionStorage.setItem('amanda_clinica_unlocked','1');
+      sessionStorage.setItem('amanda_clinica_auth_mode',authMode);
+      if(authEmail)sessionStorage.setItem('amanda_clinica_auth_email',authEmail);
+      else sessionStorage.removeItem('amanda_clinica_auth_email');
       CURRENT_VIEW=(location.hash||'#dashboard').slice(1);
       if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
       swapScreen({currentSelector:'.login-shell',exitClass:'screen-exit-left',enterClass:'screen-enter-right',renderNext:renderShell});
     };
-    if(p.pin){
-      showLoginPinPanel(p, unlock);
-    }else unlock();
+    if(profile.pin)showLoginPinPanel(profile,unlock);
+    else unlock();
+  }
+
+  function enterProfile(id) {
+    const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
+    completeProfileUnlock(profile,'offline','');
+  }
+
+  async function enterProfileWithGoogle(id,button){
+    if(LOGIN_GOOGLE_INFLIGHT)return await LOGIN_GOOGLE_INFLIGHT;
+    const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
+    const original=button?.innerHTML||'';
+    LOGIN_GOOGLE_INFLIGHT=(async()=>{
+      if(!window.GoogleDriveClinic?.authenticate)throw new Error('O login Google ainda não está disponível. Atualize a página e tente novamente.');
+      if(button){button.disabled=true;button.classList.add('is-loading');button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Conectando ao Google…</span>';}
+      const user=await window.GoogleDriveClinic.authenticate(true);
+      completeProfileUnlock(profile,'google',String(user?.email||''));
+      return user;
+    })().finally(()=>{
+      if(button?.isConnected){button.disabled=false;button.classList.remove('is-loading');button.innerHTML=original;}
+      LOGIN_GOOGLE_INFLIGHT=null;
+    });
+    return await LOGIN_GOOGLE_INFLIGHT;
+  }
+
+  function enterProfileOffline(id){
+    const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
+    if(!profile?.pin){
+      toast('Para entrar sem Google, crie primeiro um PIN em Configurações.','warn');
+      return;
+    }
+    completeProfileUnlock(profile,'offline','');
   }
 
   function hideLoginPinPanel(){

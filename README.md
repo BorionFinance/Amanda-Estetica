@@ -1,3 +1,11 @@
+## v1.9.0 — Login Google obrigatório
+
+- O botão principal de entrada exige a conta Google autorizada.
+- Amanda e Pedro (administrador técnico) estão autorizados.
+- Conta diferente é recusada pelo aplicativo.
+- “Entrar sem login” fica discreto no canto e exige PIN local previamente configurado.
+- A interconexão com o Borion e as travas do Google Drive foram preservadas.
+
 ## v1.8.0 — Auditoria relacional e integridade total
 
 - Cliente, protocolo, pacote, atendimento, estoque e financeiro agora usam vínculos protegidos.

@@ -279,3 +279,31 @@ body.login-page #root{
   .login-auth-avatar .profile-avatar,.login-auth-avatar .profile-avatar.xlarge{width:96px!important;height:96px!important}
   .login-auth-card h2{font-size:28px}
 }
+
+
+/* v1.9.0 — Google obrigatório no acesso principal */
+.login-offline-entry{
+  position:fixed!important;
+  top:max(14px,env(safe-area-inset-top))!important;
+  right:max(16px,env(safe-area-inset-right))!important;
+  z-index:12!important;
+  border:0!important;
+  background:transparent!important;
+  color:rgba(55,38,47,.56)!important;
+  font:600 11px/1.2 inherit!important;
+  letter-spacing:.01em!important;
+  padding:7px 8px!important;
+  cursor:pointer!important;
+  opacity:.72!important;
+}
+.login-offline-entry:hover,.login-offline-entry:focus-visible{opacity:1!important;color:rgba(55,38,47,.84)!important;text-decoration:underline}
+.login-profile-summary{display:flex;align-items:center;gap:14px;width:100%;padding:8px 8px 16px}
+.login-profile-summary>span{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left}
+.login-profile-summary strong{font-size:1.02rem}
+.login-profile-summary small{font-size:.78rem;color:rgba(55,38,47,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.login-google-entry{width:100%!important;min-height:54px!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:10px!important;border-radius:16px!important}
+.google-entry-mark{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#fff;color:#4285f4;font-weight:800;font-family:Arial,sans-serif;box-shadow:0 1px 5px rgba(0,0,0,.13)}
+.login-google-entry.is-loading{cursor:wait!important;opacity:.82}
+.login-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.44);border-top-color:#fff;border-radius:50%;animation:loginGoogleSpin .72s linear infinite}
+@keyframes loginGoogleSpin{to{transform:rotate(360deg)}}
+@media(max-width:600px){.login-offline-entry{font-size:10px!important;top:max(9px,env(safe-area-inset-top))!important;right:max(9px,env(safe-area-inset-right))!important}}

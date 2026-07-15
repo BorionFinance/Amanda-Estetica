@@ -11,6 +11,7 @@
   const API_KEY = 'AIzaSyAMm_8CtFg_YP2ssG4XaiBbOc7wuJFq7xs';
   const PROJECT_NUMBER = '946105310952';
   const SCOPES = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file';
+  const ALLOWED_ACCOUNT_HASHES = new Set(['8593d642f79e2a03a8a75ae91096d00d77e4f82f5149283684b6605fc9821a9e','db9c91e0d2956a89a70d9683b4a2a4d048b9cde255f861425342fe877b48339c']);
   const DATA_FILE = 'Amanda_Clinica_Dados.json';
   const USER_KEY = 'amanda_clinica_gdrive_user';
   const DATA_FILE_ID_PREFIX = 'amanda_clinica_gdrive_data_file_';
@@ -77,7 +78,7 @@
           },
           error_callback: error => reject(new Error(error?.message || 'Login com Google cancelado.'))
         });
-        this.tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+        this.tokenClient.requestAccessToken({ prompt: interactive ? 'select_account' : '' });
       });
     },
 
@@ -115,6 +116,27 @@
       localStorage.removeItem(USER_KEY);
     }
   };
+
+  async function accountHash(email) {
+    const normalized = String(email || '').trim().toLowerCase();
+    if (!normalized || !globalThis.crypto?.subtle) return '';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function assertAuthorizedUser(user) {
+    const hash = await accountHash(user?.email);
+    if (!hash || !ALLOWED_ACCOUNT_HASHES.has(hash)) {
+      Auth.signOut();
+      throw new Error('Esta conta Google não está autorizada a acessar o Amanda Estética.');
+    }
+    return user;
+  }
+
+  async function authenticateGoogle(interactive = true) {
+    await Auth.ensureToken(interactive);
+    return await assertAuthorizedUser(await Auth.fetchUser());
+  }
 
   async function headers(json = false) {
     const token = await Auth.ensureToken(false);
@@ -481,12 +503,14 @@
     cachedUser() { return Auth.cachedUser(); },
     folderId() { return getFolderId(); },
     isConfigured() { return !!(Auth.cachedUser() && getFolderId()); },
+    async authenticate(interactive = true) {
+      return await authenticateGoogle(interactive);
+    },
 
     async connect(interactive = true) {
       if (connectionInflight) return await connectionInflight;
       connectionInflight = (async () => {
-        await Auth.ensureToken(interactive);
-        const user = await Auth.fetchUser();
+        const user = await authenticateGoogle(interactive);
         let folderId = getFolderId();
         if (!folderId) {
           const picked = await openFolderPicker();
@@ -502,10 +526,10 @@
     async ensureConnection(interactive = false) {
       if (!this.isConfigured()) return await this.connect(interactive);
       await Auth.ensureToken(interactive);
-      if (!Auth.cachedUser()) await Auth.fetchUser();
+      const user = await assertAuthorizedUser(await Auth.fetchUser());
       const folderId = getFolderId();
       await ensureAppFolders(folderId);
-      return { user: Auth.cachedUser(), folderId };
+      return { user, folderId };
     },
 
     async findDataFile() {

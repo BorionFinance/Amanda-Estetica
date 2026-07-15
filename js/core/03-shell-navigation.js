@@ -11,6 +11,7 @@ function renderLogin(animationClass = '') {
     document.body.classList.add('login-page');
     document.body.classList.remove('sidebar-open');
     $('#root').innerHTML = `<main class="login-shell ${animationClass}">
+      <button class="login-offline-entry" type="button" data-action="enter-profile-offline" data-id="${eattr(profile?.id || '')}" title="Acesso local de contingência">Entrar sem login</button>
       <div class="login-signature-stage" data-login-signature aria-hidden="true">
         <canvas class="login-signature-frame" width="1140" height="1470" aria-hidden="true"></canvas>
       </div>
@@ -22,16 +23,18 @@ function renderLogin(animationClass = '') {
         </div>
       </section>
       <section class="login-card login-card-clear">
-        <button class="profile-login profile-login-clear" data-action="enter-profile" data-id="${eattr(profile?.id || '')}">
+        <div class="login-profile-summary">
           ${profileAvatar(profile)}
           <span><strong>${esc(profile?.name || 'Amanda')}</strong><small>${esc(profile?.clinic?.clinicName || 'Amanda Braz Estética Avançada')}</small></span>
-          ${icon('chevron',20)}
+        </div>
+        <button class="btn primary login-google-entry" type="button" data-action="enter-profile-google" data-id="${eattr(profile?.id || '')}">
+          <span class="google-entry-mark" aria-hidden="true">G</span>
+          <span>Entrar com Google</span>
         </button>
-        ${hasPin ? `<div class="pin-hint">Perfil protegido por PIN.</div>` : `<div class="pin-hint">Toque no perfil para entrar.</div>`}
-        <button class="btn text create-profile-clear" data-action="create-profile">${icon('plus',17)} Criar outro perfil</button>
+        <div class="pin-hint">${hasPin ? 'Após o Google, o PIN local também será solicitado.' : 'A conta Google autorizada é obrigatória para entrar.'}</div>
       </section>
       <div id="login-auth-layer" class="login-auth-layer" aria-live="polite"></div>
-      <footer class="login-footer">Dados salvos localmente e prontos para sincronizar com uma pasta do Google Drive.</footer>
+      <footer class="login-footer">Acesso restrito à conta autorizada. O modo sem login exige PIN local neste dispositivo.</footer>
     </main>`;
     window.requestAnimationFrame(() => window.startLoginSignatureAnimation?.());
   }

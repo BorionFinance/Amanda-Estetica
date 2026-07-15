@@ -1,4 +1,4 @@
-const CACHE='amanda-clinica-v1.8.9-borion-interop';
+const CACHE='amanda-clinica-v1.9.0-google-login';
 const APP_SHELL=[
   "./",
   "./index.html",
