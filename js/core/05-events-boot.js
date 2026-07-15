@@ -21,7 +21,7 @@ let RESIZE_FRAME = 0;
     if(sessionStorage.getItem('amanda_clinica_unlocked')==='1')renderShell();else renderLogin();
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.10.2').catch(console.warn);
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.10.3').catch(console.warn);
   }
 
   document.addEventListener('pointerdown', event => {

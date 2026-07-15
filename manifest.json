@@ -33,5 +33,6 @@
       "type": "image/png",
       "purpose": "any"
     }
-  ]
+  ],
+  "version": "1.10.3"
 }
