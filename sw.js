@@ -1,4 +1,4 @@
-const CACHE='amanda-clinica-v1.9.0-google-login';
+const CACHE='amanda-clinica-v1.10.0-mobile-borion';
 const APP_SHELL=[
   "./",
   "./index.html",
@@ -18,9 +18,10 @@ const APP_SHELL=[
   "./css/98-lockscreen-clock.css",
   "./css/99-login-signature.css",
   "./css/100-integrity-relations.css",
+  "./css/110-mobile-borion.css?v=1.10.0",
   "./js/data/initial-data.js",
   "./js/services/storage.js",
-  "./js/services/google-drive.js",
+  "./js/services/google-drive.js?v=1.10.0",
   "./js/core/00-config-icons.js",
   "./js/core/01-state-utils.js",
   "./js/core/08-integrity-relations.js",
@@ -37,9 +38,10 @@ const APP_SHELL=[
   "./js/forms/02-records-media.js",
   "./js/forms/03-products-profile.js",
   "./js/services/sync-backup.js",
-  "./js/services/borion-interop-source.js",
+  "./js/services/borion-interop-source.js?v=1.10.0",
   "./js/core/04-actions.js",
-  "./js/core/05-events-boot.js",
+  "./js/core/05-events-boot.js?v=1.10.0",
+  "./js/core/09-mobile-experience.js?v=1.10.0",
   "./initial-data.json",
   "./manifest.json",
   "./icon-192.png",
@@ -58,12 +60,21 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
-      const copy = response.clone();
-      caches.open(CACHE).then(cache => cache.put(event.request, copy));
+  const request=event.request;
+  if(request.method!=='GET'||!request.url.startsWith(self.location.origin))return;
+  const url=new URL(request.url);
+  const isCode=request.mode==='navigate'||/\.(?:html|css|js)$/.test(url.pathname);
+  if(isCode){
+    event.respondWith(fetch(request,{cache:'no-store'}).then(response=>{
+      const copy=response.clone();
+      caches.open(CACHE).then(cache=>cache.put(request,copy));
       return response;
-    }).catch(() => caches.match('./index.html')))
-  );
+    }).catch(()=>caches.match(request).then(hit=>hit||caches.match('./index.html'))));
+    return;
+  }
+  event.respondWith(caches.match(request).then(cached=>cached||fetch(request).then(response=>{
+    const copy=response.clone();
+    caches.open(CACHE).then(cache=>cache.put(request,copy));
+    return response;
+  })));
 });
