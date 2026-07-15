@@ -7,11 +7,9 @@
 
 function renderLogin(animationClass = '') {
     const profile = activeProfile();
-    const hasPin = !!profile?.pin;
     document.body.classList.add('login-page');
     document.body.classList.remove('sidebar-open');
     $('#root').innerHTML = `<main class="login-shell ${animationClass}">
-      <button class="login-offline-entry" type="button" data-action="enter-profile-offline" data-id="${eattr(profile?.id || '')}" title="Acesso local de contingência">Entrar sem login</button>
       <div class="login-signature-stage" data-login-signature aria-hidden="true">
         <canvas class="login-signature-frame" width="1140" height="1470" aria-hidden="true"></canvas>
       </div>
@@ -22,19 +20,15 @@ function renderLogin(animationClass = '') {
           <p>Agenda, prontuários, protocolos, fotos e financeiro em um único lugar.</p>
         </div>
       </section>
-      <section class="login-card login-card-clear">
-        <div class="login-profile-summary">
+      <section class="login-card login-card-clear login-card-test-access">
+        <button class="profile-login test-profile-entry" type="button" data-action="enter-profile" data-id="${eattr(profile?.id || '')}" aria-label="Entrar como ${eattr(profile?.name || 'Amanda')}">
           ${profileAvatar(profile)}
-          <span><strong>${esc(profile?.name || 'Amanda')}</strong><small>${esc(profile?.clinic?.clinicName || 'Amanda Braz Estética Avançada')}</small></span>
-        </div>
-        <button class="btn primary login-google-entry" type="button" data-action="enter-profile-google" data-id="${eattr(profile?.id || '')}">
-          <span class="google-entry-mark" aria-hidden="true">G</span>
-          <span>Entrar com Google</span>
+          <span><strong>${esc(profile?.name || 'Amanda')}</strong><small>Toque para entrar e testar o aplicativo</small></span>
+          ${icon('chevron',20)}
         </button>
-        <div class="pin-hint">${hasPin ? 'Após o Google, o PIN local também será solicitado.' : 'A conta Google autorizada é obrigatória para entrar.'}</div>
+        <div class="test-access-note"><strong>Acesso de teste liberado</strong><span>Temporariamente sem Google, senha ou PIN.</span></div>
       </section>
-      <div id="login-auth-layer" class="login-auth-layer" aria-live="polite"></div>
-      <footer class="login-footer">Acesso restrito à conta autorizada. O modo sem login exige PIN local neste dispositivo.</footer>
+      <footer class="login-footer">Modo de teste temporário · entrada direta habilitada</footer>
     </main>`;
     window.requestAnimationFrame(() => window.startLoginSignatureAnimation?.());
   }

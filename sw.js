@@ -1,4 +1,4 @@
-const CACHE='amanda-clinica-v1.10.0-mobile-borion';
+const CACHE='amanda-clinica-v1.10.1-mobile-borion';
 const APP_SHELL=[
   "./",
   "./index.html",
@@ -18,10 +18,10 @@ const APP_SHELL=[
   "./css/98-lockscreen-clock.css",
   "./css/99-login-signature.css",
   "./css/100-integrity-relations.css",
-  "./css/110-mobile-borion.css?v=1.10.0",
+  "./css/110-mobile-borion.css?v=1.10.1",
   "./js/data/initial-data.js",
   "./js/services/storage.js",
-  "./js/services/google-drive.js?v=1.10.0",
+  "./js/services/google-drive.js?v=1.10.1",
   "./js/core/00-config-icons.js",
   "./js/core/01-state-utils.js",
   "./js/core/08-integrity-relations.js",
@@ -38,10 +38,10 @@ const APP_SHELL=[
   "./js/forms/02-records-media.js",
   "./js/forms/03-products-profile.js",
   "./js/services/sync-backup.js",
-  "./js/services/borion-interop-source.js?v=1.10.0",
+  "./js/services/borion-interop-source.js?v=1.10.1",
   "./js/core/04-actions.js",
-  "./js/core/05-events-boot.js?v=1.10.0",
-  "./js/core/09-mobile-experience.js?v=1.10.0",
+  "./js/core/05-events-boot.js?v=1.10.1",
+  "./js/core/09-mobile-experience.js?v=1.10.1",
   "./initial-data.json",
   "./manifest.json",
   "./icon-192.png",

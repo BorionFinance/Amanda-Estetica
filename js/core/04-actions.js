@@ -100,7 +100,7 @@ async function handleAction(action, el) {
 
   let LOGIN_GOOGLE_INFLIGHT = null;
 
-  function completeProfileUnlock(profile, authMode = 'google', authEmail = '') {
+  function completeProfileUnlock(profile, authMode = 'google', authEmail = '', bypassPin = false) {
     const unlock=()=>{
       STATE.activeProfileId=profile.id;
       sessionStorage.setItem('amanda_clinica_unlocked','1');
@@ -111,13 +111,13 @@ async function handleAction(action, el) {
       if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
       swapScreen({currentSelector:'.login-shell',exitClass:'screen-exit-left',enterClass:'screen-enter-right',renderNext:renderShell});
     };
-    if(profile.pin)showLoginPinPanel(profile,unlock);
+    if(profile.pin && !bypassPin)showLoginPinPanel(profile,unlock);
     else unlock();
   }
 
   function enterProfile(id) {
     const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
-    completeProfileUnlock(profile,'offline','');
+    completeProfileUnlock(profile,'test','',true);
   }
 
   async function enterProfileWithGoogle(id,button){
@@ -139,11 +139,7 @@ async function handleAction(action, el) {
 
   function enterProfileOffline(id){
     const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
-    if(!profile?.pin){
-      toast('Para entrar sem Google, crie primeiro um PIN em Configurações.','warn');
-      return;
-    }
-    completeProfileUnlock(profile,'offline','');
+    completeProfileUnlock(profile,'test','',true);
   }
 
   function hideLoginPinPanel(){
