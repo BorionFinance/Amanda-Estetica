@@ -1,4 +1,4 @@
-/* Amanda Estética v1.10.1 — camada mobile inspirada no Borion Finance
+/* Amanda Estética v1.10.2 — camada mobile inspirada no Borion Finance
    Responsividade, safe areas, bottom sheets, teclado, gestos e desempenho. */
 
 :root{
@@ -277,13 +277,10 @@ input,select,textarea{font-size:16px}
 }
 
 
-/* v1.10.1 — acesso de teste e rolagem mobile com um dedo */
-.login-card-test-access{display:grid;gap:13px}
-.test-profile-entry{min-height:74px;cursor:pointer;touch-action:manipulation}
-.test-profile-entry .icon{flex:none;color:var(--rose-dark)}
-.test-access-note{display:grid;gap:3px;padding:11px 13px;border:1px solid rgba(200,95,134,.16);border-radius:13px;background:rgba(255,247,250,.78)}
-.test-access-note strong{font-size:11px;color:var(--rose-dark)}
-.test-access-note span{font-size:9px;color:var(--muted)}
+/* v1.10.2 — acesso temporário sem senha, mantendo a tela animada original */
+.login-profile-direct{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;text-align:left;border-radius:14px;transition:background .18s ease,transform .18s ease}
+.login-profile-direct:hover,.login-profile-direct:focus-visible{background:rgba(255,255,255,.34);outline:2px solid rgba(200,95,134,.22);outline-offset:2px}
+.login-profile-direct:active{transform:scale(.99)}
 .login-signature-stage,.login-signature-frame{pointer-events:none!important}
 @media(max-width:900px), (pointer:coarse){
   html,body{touch-action:pan-y pinch-zoom}
@@ -292,5 +289,4 @@ input,select,textarea{font-size:16px}
   .mobile-bottom-sheet>.modal-body{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   body.login-page,body.login-page #root,.login-shell{overflow-y:auto!important;touch-action:pan-y pinch-zoom!important;-webkit-overflow-scrolling:touch}
   .login-shell{min-height:var(--amanda-app-vh,100dvh)}
-  .test-profile-entry{width:100%;min-height:78px}
 }

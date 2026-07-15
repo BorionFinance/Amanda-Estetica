@@ -128,7 +128,7 @@ async function handleAction(action, el) {
       if(!window.GoogleDriveClinic?.authenticate)throw new Error('O login Google ainda não está disponível. Atualize a página e tente novamente.');
       if(button){button.disabled=true;button.classList.add('is-loading');button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Conectando ao Google…</span>';}
       const user=await window.GoogleDriveClinic.authenticate(true);
-      completeProfileUnlock(profile,'google',String(user?.email||''));
+      completeProfileUnlock(profile,'google',String(user?.email||''),true);
       return user;
     })().finally(()=>{
       if(button?.isConnected){button.disabled=false;button.classList.remove('is-loading');button.innerHTML=original;}

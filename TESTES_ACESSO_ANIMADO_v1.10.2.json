@@ -1,0 +1,16 @@
+{
+  "app": "Amanda Estética v1.10.2",
+  "checks": {
+    "index_and_sw_local_references": true,
+    "javascript_files_count": 23,
+    "json_files_count": 5,
+    "animated_login_signature_preserved": true,
+    "direct_profile_entry_without_pin": true,
+    "google_login_optional_and_present": true,
+    "google_login_bypasses_pin_for_testing": true,
+    "one_finger_mobile_scroll": true,
+    "compact_login_removed": true
+  },
+  "missing_references": [],
+  "passed": true
+}

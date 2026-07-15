@@ -7,9 +7,11 @@
 
 function renderLogin(animationClass = '') {
     const profile = activeProfile();
+    const hasPin = !!profile?.pin;
     document.body.classList.add('login-page');
     document.body.classList.remove('sidebar-open');
     $('#root').innerHTML = `<main class="login-shell ${animationClass}">
+      <button class="login-offline-entry" type="button" data-action="enter-profile-offline" data-id="${eattr(profile?.id || '')}" title="Acesso direto temporário para testes">Entrar sem senha</button>
       <div class="login-signature-stage" data-login-signature aria-hidden="true">
         <canvas class="login-signature-frame" width="1140" height="1470" aria-hidden="true"></canvas>
       </div>
@@ -20,15 +22,19 @@ function renderLogin(animationClass = '') {
           <p>Agenda, prontuários, protocolos, fotos e financeiro em um único lugar.</p>
         </div>
       </section>
-      <section class="login-card login-card-clear login-card-test-access">
-        <button class="profile-login test-profile-entry" type="button" data-action="enter-profile" data-id="${eattr(profile?.id || '')}" aria-label="Entrar como ${eattr(profile?.name || 'Amanda')}">
+      <section class="login-card login-card-clear">
+        <button class="login-profile-summary login-profile-direct" type="button" data-action="enter-profile" data-id="${eattr(profile?.id || '')}" aria-label="Entrar sem senha como ${eattr(profile?.name || 'Amanda')}">
           ${profileAvatar(profile)}
-          <span><strong>${esc(profile?.name || 'Amanda')}</strong><small>Toque para entrar e testar o aplicativo</small></span>
-          ${icon('chevron',20)}
+          <span><strong>${esc(profile?.name || 'Amanda')}</strong><small>${esc(profile?.clinic?.clinicName || 'Amanda Braz Estética Avançada')}</small></span>
         </button>
-        <div class="test-access-note"><strong>Acesso de teste liberado</strong><span>Temporariamente sem Google, senha ou PIN.</span></div>
+        <button class="btn primary login-google-entry" type="button" data-action="enter-profile-google" data-id="${eattr(profile?.id || '')}">
+          <span class="google-entry-mark" aria-hidden="true">G</span>
+          <span>Entrar com Google</span>
+        </button>
+        <div class="pin-hint">Toque no perfil para entrar sem senha ou use o Google para testar Drive, backups e sincronização.</div>
       </section>
-      <footer class="login-footer">Modo de teste temporário · entrada direta habilitada</footer>
+      <div id="login-auth-layer" class="login-auth-layer" aria-live="polite"></div>
+      <footer class="login-footer">Modo de teste temporário: entrada sem senha. O login Google continua disponível para Drive e backups.</footer>
     </main>`;
     window.requestAnimationFrame(() => window.startLoginSignatureAnimation?.());
   }
