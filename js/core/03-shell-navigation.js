@@ -13,7 +13,7 @@ function renderLogin(animationClass = '') {
     $('#root').innerHTML = `<main class="login-shell ${animationClass}">
       <button class="login-offline-entry" type="button" data-action="enter-profile-offline" data-id="${eattr(profile?.id || '')}" title="Acesso direto temporário para testes">Entrar sem senha</button>
       <div class="login-signature-stage" data-login-signature aria-hidden="true">
-        <canvas class="login-signature-frame" width="1140" height="1470" aria-hidden="true"></canvas>
+        <img class="login-signature-frame" width="668" height="1000" alt="" aria-hidden="true" decoding="async" fetchpriority="high">
       </div>
       <section class="login-brand">
         <div class="login-brand-copy">

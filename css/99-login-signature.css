@@ -60,15 +60,15 @@ body.login-page #root{
 }
 .login-signature-frame{
   position:absolute!important;
-  inset:0!important;
+  inset:auto;
   display:block!important;
-  width:100%!important;
-  height:100%!important;
+  width:auto;
+  height:auto;
   max-width:none!important;
   max-height:none!important;
   opacity:0;
   transform:none!important;
-  object-fit:fill!important;
+  object-fit:contain!important;
   pointer-events:none!important;
 }
 .login-signature-stage.is-visible .login-signature-frame{opacity:1}

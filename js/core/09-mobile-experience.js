@@ -1,6 +1,6 @@
 'use strict';
 
-/* Amanda Estética v1.10.3 — experiência mobile alinhada ao Borion Finance. */
+/* Amanda Estética v1.10.4 — experiência mobile alinhada ao Borion Finance. */
 (() => {
   const MobileAmanda = {
     initialized:false,
