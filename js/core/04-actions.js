@@ -78,6 +78,29 @@ async function handleAction(action, el) {
       'add-finance':()=>openFinanceForm(),
       'edit-finance':()=>{const f=data().finance.find(x=>x.id===id);if(f&&(f.sourceLocked||f.attendanceId||f.packageFinanceKind)){toast('Lançamento automático: edite o atendimento ou pacote de origem.','warn');return;}openFinanceForm(id);},
       'delete-finance':()=>deleteFinanceRecordSafe(id),
+      'remove-setting-tag':async()=>{
+        const key=el.dataset.key,value=el.dataset.value;
+        const list=data().settings[key];
+        if(!Array.isArray(list))return;
+        const idx=list.findIndex(x=>x===value);
+        if(idx<0)return;
+        list.splice(idx,1);
+        await persist('Item removido das configurações',{detail:value});
+        renderView();
+      },
+      'add-setting-tag':async()=>{
+        const key=el.dataset.key;
+        const input=el.closest('.tag-manager')?.querySelector('[data-tag-input]');
+        const value=(input?.value||'').trim();
+        if(!value){toast('Digite um nome antes de adicionar.','error');return;}
+        const list=data().settings[key]||(data().settings[key]=[]);
+        if(list.some(x=>normalize(x)===normalize(value))){toast(`"${value}" já está cadastrado.`,'error');return;}
+        list.push(value);
+        if(key!=='financeCategories')list.sort((a,b)=>a.localeCompare(b,'pt-BR'));
+        await persist('Item adicionado às configurações',{detail:value});
+        renderView();
+        toast(`${value} adicionado.`);
+      },
       'export-finance-csv':exportFinanceCsv,
       'manual-save':manualSave,
       'quick-cloud-save':async()=>{if(window.GoogleDriveClinic?.isConfigured?.())await syncGoogle();else await connectGoogle();},

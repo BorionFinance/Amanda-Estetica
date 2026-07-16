@@ -95,6 +95,7 @@ function openAttendanceForm(id='',prefill={}) {
       ${field('Duração (min)','duration',a.duration,'number',{min:0,step:5})}
       ${field('Valor cobrado nesta sessão','chargedValue',a.chargedValue,'number',{min:0,step:'0.01',help:'Em sessões já pagas dentro de um pacote, deixe zero para não duplicar a receita.'})}
       ${selectField('Forma de pagamento','paymentMethod',['Pix','Dinheiro','Cartão de Débito','Cartão de Crédito à vista','Cartão de Crédito parcelado','Pacote','Cortesia'],a.paymentMethod)}
+      ${field('Em quantas vezes','installments',a.installments||1,'number',{min:1,max:24,step:1,className:'installments-field'})}
       ${selectField('Status','status',['Realizado','Em andamento','Cancelado','Não compareceu'],a.status,{blank:false})}
       ${checkField('Pagamento recebido','paid',a.paid)}
       ${field('Próximo retorno','nextReturn',a.nextReturn,'date')}
@@ -126,7 +127,7 @@ function openAttendanceForm(id='',prefill={}) {
         const dt=dateFromIso(o.date); dt.setDate(dt.getDate()+num(protocol.returnDays)); next=localIsoDate(dt);
       }
       const charged=num(o.chargedValue),baseCost=num(protocol?.cost);
-      const item={...a,id:o.id||uid('AT'),date:o.date,clientId:o.clientId,clientName:client?.name||'',phone:client?.phone||'',protocolId:o.protocolId,protocolName:protocol?.name||'',packageId:o.packageId||'',duration:num(o.duration)||num(protocol?.duration),cost:baseCost,suggestedPrice:num(protocol?.price),chargedValue:charged,paymentMethod:o.paymentMethod||'',paid:bool(o.paid),nextReturn:next,status:o.status,evolution:o.evolution||'',notes:o.notes||'',appointmentId:o.appointmentId||'',updatedAt:nowIso()};
+      const item={...a,id:o.id||uid('AT'),date:o.date,clientId:o.clientId,clientName:client?.name||'',phone:client?.phone||'',protocolId:o.protocolId,protocolName:protocol?.name||'',packageId:o.packageId||'',duration:num(o.duration)||num(protocol?.duration),cost:baseCost,suggestedPrice:num(protocol?.price),chargedValue:charged,paymentMethod:o.paymentMethod||'',installments:o.paymentMethod==='Cartão de Crédito parcelado'?Math.max(1,num(o.installments)):1,paid:bool(o.paid),nextReturn:next,status:o.status,evolution:o.evolution||'',notes:o.notes||'',appointmentId:o.appointmentId||'',updatedAt:nowIso()};
       applyAttendanceInventory(existing,item);
       item.cost=Math.max(baseCost,num(item.inventoryCost));
       item.profit=charged-item.cost;
@@ -169,6 +170,12 @@ function openAttendanceForm(id='',prefill={}) {
     if(packSel.value&&!existing){setMoneyFieldValue(form.elements.chargedValue,0);form.elements.paymentMethod.value='Pacote';}
     refreshStockPreview();
   };
+  const refreshPaymentMethod=()=>{
+    const installmentsField=form.querySelector('.installments-field');
+    if(installmentsField)installmentsField.classList.toggle('is-hidden',form.elements.paymentMethod.value!=='Cartão de Crédito parcelado');
+  };
+  form.elements.paymentMethod.addEventListener('change',refreshPaymentMethod);
+  refreshPaymentMethod();
   form.elements.clientId.addEventListener('change',autofill);
   form.elements.protocolId.addEventListener('change',autofill);
   form.elements.date.addEventListener('change',autofill);

@@ -102,6 +102,30 @@ function field(label, name, value = '', type = 'text', options = {}) {
     </label>`;
   }
 
+  function selectFieldWithAdd(label, name, optionsList, current = '', options = {}) {
+    return `<div class="field-with-add ${options.className || ''}">
+      <div class="field-with-add-row">
+        ${selectField(label, name, optionsList, current, { blank: options.blank, placeholder: options.placeholder })}
+        <button type="button" class="icon-btn small" data-quick-add="${eattr(name)}" title="Cadastrar novo(a)" aria-label="Cadastrar novo(a) ${esc(label)}">${icon('plus', 17)}</button>
+      </div>
+      ${options.help ? `<small>${esc(options.help)}</small>` : ''}
+    </div>`;
+  }
+
+  async function quickAddOption(selectEl, settingsKey, { sort = true, label = 'item' } = {}) {
+    if (!selectEl) return;
+    const value = (window.prompt(`Nome do(a) novo(a) ${label}:`) || '').trim();
+    if (!value) return;
+    const list = data().settings[settingsKey] || (data().settings[settingsKey] = []);
+    const duplicate = list.find(x => normalize(x) === normalize(value));
+    if (duplicate) { selectEl.value = duplicate; toast(`"${duplicate}" já estava cadastrado(a).`); return; }
+    list.push(value);
+    if (sort) list.sort((a,b) => a.localeCompare(b,'pt-BR'));
+    await persist(`Novo(a) ${label} cadastrado(a)`, { detail: value });
+    selectEl.innerHTML = `<option value="">Selecione</option>${list.map(x => `<option value="${eattr(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('')}`;
+    toast(`${value} adicionado(a).`);
+  }
+
   function checkField(label, name, checked = false, help = '') {
     return `<label class="check-field">
       <input type="checkbox" name="${eattr(name)}" ${checked ? 'checked' : ''}>

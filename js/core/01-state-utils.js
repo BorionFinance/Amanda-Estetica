@@ -120,6 +120,25 @@ let STATE = null;
     return `55${digits}`;
   }
 
+  function digitsOnly(value) {
+    return String(value ?? '').replace(/\D/g, '');
+  }
+
+  function maskPhone(value) {
+    const d = digitsOnly(value).slice(0, 11);
+    if (d.length <= 10) return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
+    return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
+  }
+
+  function maskDocument(value) {
+    const d = digitsOnly(value).slice(0, 11);
+    return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  }
+
+  function maskZip(value) {
+    return digitsOnly(value).slice(0, 8).replace(/(\d{5})(\d)/, '$1-$2');
+  }
+
   function activeProfile() {
     return (STATE.profiles || []).find(p => p.id === STATE.activeProfileId) || STATE.profiles?.[0];
   }
@@ -166,6 +185,24 @@ let STATE = null;
     if (!d.settings.fabPosition || typeof d.settings.fabPosition !== 'object') d.settings.fabPosition = { side: 'right', topRatio: .78 };
     if (typeof d.settings.autosaveFolder !== 'boolean') d.settings.autosaveFolder = true;
     if (typeof d.settings.autosaveGoogle !== 'boolean') d.settings.autosaveGoogle = true;
+    if (!Array.isArray(d.settings.productCategories)) {
+      const used = new Set(d.products.map(x => String(x.category || '').trim()).filter(Boolean));
+      d.settings.productCategories = [...used].sort((a,b) => a.localeCompare(b,'pt-BR'));
+    }
+    if (!Array.isArray(d.settings.productBrands)) {
+      const used = new Set(d.products.map(x => String(x.brand || '').trim()).filter(Boolean));
+      d.settings.productBrands = [...used].sort((a,b) => a.localeCompare(b,'pt-BR'));
+    }
+    if (!Array.isArray(d.settings.financeCategories)) {
+      const defaults = ['Atendimento','Produto','Marketing','Aluguel','Transporte','Imposto','Fornecedor','Outros'];
+      const used = d.finance.map(x => String(x.category || '').trim()).filter(Boolean);
+      d.settings.financeCategories = [...new Set([...defaults, ...used])];
+    }
+    if (!Array.isArray(d.settings.costCenters)) {
+      const defaults = ['Recepção','Sala de procedimentos','Estoque','Administrativo','Marketing'];
+      const used = d.finance.map(x => String(x.costCenter || '').trim()).filter(Boolean);
+      d.settings.costCenters = [...new Set([...defaults, ...used])];
+    }
     return d;
   }
 

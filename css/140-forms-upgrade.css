@@ -1,0 +1,75 @@
+/**
+ * Amanda Estética v1.11.0 — pacote de melhorias de formulários:
+ * produtos vinculados do protocolo, máscaras e CEP do cadastro de cliente,
+ * parcelamento no atendimento, categorias/marcas rápidas de produto e financeiro.
+ */
+
+/* =========================================================
+   Protocolos — produtos vinculados (botão + / lista / seletor)
+   ========================================================= */
+.linked-products-field{display:flex;flex-direction:column;gap:10px}
+.linked-products-list{display:flex;flex-direction:column;gap:6px}
+.linked-product-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:9px 12px;border:1px solid var(--line);border-radius:12px;
+  background:rgba(255,255,255,.85);font-size:12px;
+}
+.linked-products-empty{padding:10px 2px;font-size:12px}
+.linked-products-picker{
+  display:grid;grid-template-columns:1.4fr .7fr .8fr;gap:8px;
+  padding:12px;border:1px solid var(--line);border-radius:14px;
+  background:var(--surface-soft);
+}
+.linked-products-picker.is-hidden{display:none}
+.linked-products-picker select,
+.linked-products-picker input{
+  height:38px;border:1px solid var(--line);border-radius:9px;padding:0 10px;
+  background:#fff;font-size:12px;color:var(--ink);
+}
+.linked-products-picker-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+[data-picker-open].is-hidden{display:none}
+.linked-products-subtotal{margin:-4px 0 0;font-size:11px}
+
+/* =========================================================
+   Cliente — CEP: sugestões e status de busca
+   ========================================================= */
+.cep-helper{display:flex;flex-direction:column;gap:8px}
+.cep-actions{display:flex;gap:8px;flex-wrap:wrap}
+.cep-suggestion-list{display:flex;flex-direction:column;gap:6px}
+.cep-result{
+  display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+  padding:9px 12px;border:1px solid var(--line);border-radius:11px;
+  background:#fff;text-align:left;width:100%;
+}
+.cep-result:hover{background:var(--surface-soft)}
+.cep-result strong{font-size:12px}
+.cep-result small{font-size:10px;color:var(--muted)}
+.cep-status{font-size:10px;color:var(--muted)}
+
+/* =========================================================
+   Financeiro / Produtos — categoria e marca com adição rápida
+   ========================================================= */
+.field-with-add{display:flex;flex-direction:column;gap:6px}
+.field-with-add-row{display:flex;gap:6px}
+.field-with-add-row select{flex:1}
+.field-with-add-row .icon-btn{flex:none}
+
+/* =========================================================
+   Atendimento — parcelas do cartão de crédito
+   ========================================================= */
+.installments-field.is-hidden{display:none}
+
+/* =========================================================
+   Configurações — gerenciador de marcas/categorias/centros de custo
+   ========================================================= */
+.tag-manager-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.tag-manager{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.tag-manager strong{font-size:12px}
+.tag-manager>small{color:var(--muted);font-size:10px;margin-top:-4px}
+.tag-list{display:flex;flex-wrap:wrap;gap:6px}
+.tag-empty{font-size:11px}
+.tag-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 6px 5px 10px;border-radius:999px;background:var(--surface-soft);color:var(--rose-dark);font-size:11px;font-weight:700}
+.tag-chip .icon-btn{width:18px;height:18px;border-radius:50%;color:inherit}
+.tag-add-row{display:flex;gap:6px}
+.tag-add-row input{flex:1;height:36px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:12px;background:#fff;color:var(--ink)}
+@media(max-width:860px){.tag-manager-grid{grid-template-columns:1fr}}

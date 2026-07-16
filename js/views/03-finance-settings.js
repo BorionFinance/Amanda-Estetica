@@ -51,6 +51,15 @@ function renderFinance() {
     </section>`;
   }
 
+  function renderTagManager(title, settingsKey, help='') {
+    const items = data().settings[settingsKey] || [];
+    return `<div class="tag-manager">
+      <strong>${esc(title)}</strong>${help ? `<small>${esc(help)}</small>` : ''}
+      <div class="tag-list">${items.length ? items.map(x => `<span class="tag-chip">${esc(x)}<button type="button" class="icon-btn tiny" data-action="remove-setting-tag" data-key="${eattr(settingsKey)}" data-value="${eattr(x)}" aria-label="Remover ${esc(x)}">${icon('x',12)}</button></span>`).join('') : '<span class="muted tag-empty">Nenhum cadastrado ainda.</span>'}</div>
+      <div class="tag-add-row"><input type="text" placeholder="Adicionar..." data-tag-input><button type="button" class="btn secondary compact" data-action="add-setting-tag" data-key="${eattr(settingsKey)}">${icon('plus',15)} Adicionar</button></div>
+    </div>`;
+  }
+
   function renderSettings() {
     const p=activeProfile();
     const d=data();
@@ -88,6 +97,16 @@ function renderFinance() {
               <button data-action="edit-clinic"><span class="ios-setting-icon">${icon('home',18)}</span><span><strong>Dados da clínica</strong><small>Contato, endereço e informações profissionais</small></span>${icon('chevron',18)}</button>
               <button data-action="create-profile"><span class="ios-setting-icon">${icon('plus',18)}</span><span><strong>Novo perfil</strong><small>Estrutura pronta para novos acessos</small></span>${icon('chevron',18)}</button>
               <button data-action="lock-app"><span class="ios-setting-icon">${icon('lock',18)}</span><span><strong>Bloquear aplicativo</strong><small>Voltar à tela de entrada com animação reversa</small></span>${icon('chevron',18)}</button>
+            </div>
+          </section>
+
+          <section class="ios-settings-group">
+            <h3>Marcas e categorias</h3>
+            <div class="tag-manager-grid">
+              ${renderTagManager('Categorias de produtos','productCategories')}
+              ${renderTagManager('Marcas','productBrands','Mantidas em ordem alfabética.')}
+              ${renderTagManager('Categorias financeiras','financeCategories')}
+              ${renderTagManager('Centros de custo','costCenters','Em qual área da clínica a entrada ou saída se originou.')}
             </div>
           </section>
 

@@ -14,8 +14,8 @@ function openProductForm(id='') {
       content:`<div class="form-grid">
         ${field('Código','code',p.id,'text',{required:true})}
         ${field('Produto','name',p.name,'text',{required:true,className:'span-2'})}
-        ${field('Categoria','category',p.category)}
-        ${field('Marca','brand',p.brand)}
+        ${selectFieldWithAdd('Categoria','category',data().settings.productCategories,p.category)}
+        ${selectFieldWithAdd('Marca','brand',data().settings.productBrands,p.brand)}
         ${field('Unidade','unit',p.unit)}
         ${field('Quantidade por embalagem','packageQty',p.packageQty,'number',{min:0,step:'0.01'})}
         ${field('Custo da embalagem','packageCost',p.packageCost,'number',{min:0,step:'0.01'})}
@@ -42,6 +42,9 @@ function openProductForm(id='') {
         closeModal();renderView();toast('Produto salvo.');
       }
     });
+    const form=$('#app-modal-form');
+    form.querySelector('[data-quick-add="category"]')?.addEventListener('click',()=>quickAddOption(form.elements.category,'productCategories',{label:'categoria'}));
+    form.querySelector('[data-quick-add="brand"]')?.addEventListener('click',()=>quickAddOption(form.elements.brand,'productBrands',{label:'marca'}));
   }
 
   function openFinanceForm(id='',prefill={}) {
@@ -53,13 +56,13 @@ function openProductForm(id='') {
       content:`<div class="form-grid">
         ${field('Data','date',f.date,'date',{required:true})}
         ${selectField('Tipo','type',[{value:'income',label:'Entrada'},{value:'expense',label:'Saída'}],f.type,{blank:false})}
-        ${selectField('Categoria','category',['Atendimento','Produto','Marketing','Aluguel','Transporte','Imposto','Fornecedor','Outros'],f.category)}
+        ${selectFieldWithAdd('Categoria','category',data().settings.financeCategories,f.category)}
         ${field('Descrição','description',f.description,'text',{required:true,className:'span-2'})}
         ${selectField('Cliente (opcional)','clientId',optionClients(f.clientId),f.clientId)}
         ${selectField('Forma de pagamento','paymentMethod',['Pix','Dinheiro','Cartão de Débito','Cartão de Crédito','Transferência','Boleto'],f.paymentMethod)}
         ${field('Valor','value',f.value,'number',{required:true,min:0,step:'0.01'})}
         ${selectField('Status','status',['Pago','Pendente','Cancelado'],f.status,{blank:false})}
-        ${field('Centro de custo','costCenter',f.costCenter)}
+        ${selectFieldWithAdd('Centro de custo','costCenter',data().settings.costCenters,f.costCenter,{help:'Em qual área da clínica essa entrada/saída se originou.'})}
         ${field('Origem','origin',f.origin||'Manual')}
         ${textarea('Observações','notes',f.notes,{rows:3,className:'span-2'})}
       </div><input type="hidden" name="id" value="${eattr(f.id||'')}">`,
@@ -76,6 +79,9 @@ function openProductForm(id='') {
         closeModal();renderView();toast('Lançamento salvo.');
       }
     });
+    const form=$('#app-modal-form');
+    form.querySelector('[data-quick-add="category"]')?.addEventListener('click',()=>quickAddOption(form.elements.category,'financeCategories',{sort:false,label:'categoria financeira'}));
+    form.querySelector('[data-quick-add="costCenter"]')?.addEventListener('click',()=>quickAddOption(form.elements.costCenter,'costCenters',{label:'centro de custo'}));
   }
 
   async function decodeLocalImage(file) {
