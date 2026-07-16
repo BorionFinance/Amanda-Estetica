@@ -297,6 +297,9 @@ body.login-page #root{
   opacity:.72!important;
 }
 .login-offline-entry:hover,.login-offline-entry:focus-visible{opacity:1!important;color:rgba(55,38,47,.84)!important;text-decoration:underline}
+.login-more-options{text-align:center;margin-top:14px}
+.amanda-quiet-link{border:0!important;background:transparent!important;color:rgba(55,38,47,.56)!important;font:600 11.5px/1.3 inherit!important;letter-spacing:.01em!important;padding:6px 8px!important;cursor:pointer!important;opacity:.78!important}
+.amanda-quiet-link:hover,.amanda-quiet-link:focus-visible{opacity:1!important;color:rgba(55,38,47,.88)!important;text-decoration:underline}
 .login-profile-summary{display:flex;align-items:center;gap:14px;width:100%;padding:8px 8px 16px}
 .login-profile-summary>span{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left}
 .login-profile-summary strong{font-size:1.02rem}

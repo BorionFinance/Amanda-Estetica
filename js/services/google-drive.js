@@ -20,6 +20,19 @@
   const INTEGRATION_FILE_PREFIX = 'amanda_clinica_gdrive_integration_file_';
   const STRUCTURE_PREFIX = 'amanda_clinica_gdrive_structure_';
   const APP_FOLDERS = Object.freeze({ backups: 'Backups', integration: 'Borion_Integracoes', photos: 'Fotos_Clientes' });
+  /* V1.16.0 — mecânica de backup copiada do Borion Finance: em vez de um arquivo
+     novo e único a cada ação (que crescia pra sempre), dois rodízios de slots
+     fixos, cada um sobrescrevendo o mais antigo quando dá a volta:
+     - autosave-1.json ... autosave-20.json: 1 gravação por minuto, só quando algo
+       mudou desde a última vez (ver markAutosaveDirty/runAutosaveTick).
+     - forcesave-1.json ... forcesave-40.json: um rodízio à parte, usado nos
+       momentos em que a própria pessoa pede um salvamento (conectar pela
+       primeira vez, "Salvar agora", sincronizar manualmente). */
+  const AUTOSAVE_INTERVAL_MS = 60 * 1000;
+  const AUTOSAVE_SLOTS = 20;
+  const FORCESAVE_SLOTS = 40;
+  const ROTATING_FILE_ID_PREFIX = 'amanda_clinica_gdrive_rotating_file_';
+  const ROTATING_SLOT_INDEX_PREFIX = 'amanda_clinica_gdrive_rotating_slot_';
   const resolvedFolders = new Map();
   const resolvedIntegrationFiles = new Map();
   const folderInflight = new Map();
@@ -28,6 +41,10 @@
   const dataFileInflight = new Map();
   const resolvedStructures = new Map();
   let connectionInflight = null;
+  let autosaveTimer = null;
+  let autosaveDirty = false;
+  let autosaveInFlight = false;
+  let autosaveStateGetter = null;
 
   const Auth = {
     token: '',
@@ -497,12 +514,90 @@
     return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
   }
 
+  /* ---- V1.16.0 — rodízio de backups (mesma mecânica do Borion Finance) ---- */
+  function rotatingFileKey(folderId, kind, slot) { return `${ROTATING_FILE_ID_PREFIX}${kind}_${folderId}_${slot}`; }
+  function readRotatingFileId(folderId, kind, slot) { return localStorage.getItem(rotatingFileKey(folderId, kind, slot)) || null; }
+  function writeRotatingFileId(folderId, kind, slot, id) { localStorage.setItem(rotatingFileKey(folderId, kind, slot), id); }
+
+  function rotatingIndexKey(folderId, kind) { return `${ROTATING_SLOT_INDEX_PREFIX}${kind}_${folderId}`; }
+  function readRotatingSlotIndex(folderId, kind) {
+    const raw = localStorage.getItem(rotatingIndexKey(folderId, kind));
+    const n = raw != null ? parseInt(raw, 10) : 0;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  function writeRotatingSlotIndex(folderId, kind, index) {
+    try { localStorage.setItem(rotatingIndexKey(folderId, kind), String(index)); } catch (_) {}
+  }
+
+  /* Grava `state` no próximo slot do rodízio `kind` (dentro da pasta Backups),
+     sempre reaproveitando o índice persistido desta pasta — nunca reseta pro
+     slot 1 sozinho por causa de um F5 no meio do caminho. Quando o rodízio dá a
+     volta, o slot mais antigo é sobrescrito (upload substitui o conteúdo do
+     mesmo arquivo, não cria um novo) — é isso que mantém o total sempre no teto
+     (20 para autosave, 40 para forcesave), nunca crescendo além disso. */
+  async function writeRotatingSnapshot(folderId, kind, totalSlots, state) {
+    const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+    const slotIndex = readRotatingSlotIndex(backups.id, kind);
+    const slot = (slotIndex % totalSlots) + 1;
+    const name = `${kind}-${slot}.json`;
+    let fileId = readRotatingFileId(backups.id, kind, slot);
+    if (fileId) {
+      try {
+        const meta = await getDriveObjectMeta(fileId);
+        if (meta.trashed) fileId = null;
+      } catch (error) {
+        if (error.status === 404) fileId = null; else throw error;
+      }
+    }
+    if (fileId) {
+      await updateJsonFile(fileId, state);
+    } else {
+      const existing = await findChild(backups.id, name, 'application/json');
+      if (existing) { fileId = existing.id; await updateJsonFile(fileId, state); }
+      else { fileId = (await createJsonFile(backups.id, name, state)).id; }
+      writeRotatingFileId(backups.id, kind, slot, fileId);
+    }
+    writeRotatingSlotIndex(backups.id, kind, slotIndex + 1);
+  }
+
   const GoogleDriveClinic = {
     currentFile: null,
 
     cachedUser() { return Auth.cachedUser(); },
     folderId() { return getFolderId(); },
     isConfigured() { return !!(Auth.cachedUser() && getFolderId()); },
+
+    /* V1.16.0 — autosave rotativo (20 slots, 1x por minuto), mesma mecânica do
+       Borion Finance. `stateGetter` é uma função tipo `() => STATE`, passada uma
+       vez ao iniciar o loop (login com Google ou boot já conectado); o tick só
+       grava de fato quando algo mudou desde a última vez (markAutosaveDirty). */
+    startAutosaveLoop(stateGetter) {
+      if (typeof stateGetter === 'function') autosaveStateGetter = stateGetter;
+      this.stopAutosaveLoop();
+      if (!this.isConfigured()) return;
+      autosaveTimer = setInterval(() => { this.runAutosaveTick(); }, AUTOSAVE_INTERVAL_MS);
+    },
+    stopAutosaveLoop() {
+      if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+    },
+    markAutosaveDirty() { autosaveDirty = true; },
+    async runAutosaveTick() {
+      if (!this.isConfigured() || !autosaveDirty || !autosaveStateGetter) return false;
+      if (autosaveInFlight) return false;
+      autosaveInFlight = true;
+      try {
+        const state = autosaveStateGetter();
+        if (!state) return false;
+        await writeRotatingSnapshot(getFolderId(), 'autosave', AUTOSAVE_SLOTS, state);
+        autosaveDirty = false;
+        return true;
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] autosave rotativo falhou (tenta de novo no próximo minuto):', error);
+        return false;
+      } finally {
+        autosaveInFlight = false;
+      }
+    },
     async authenticate(interactive = true) {
       return await authenticateGoogle(interactive);
     },
@@ -545,9 +640,7 @@
       localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
 
       if (options.backup) {
-        const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
-        const reason = String(options.reason || 'manual').replace(/[^a-zA-Z0-9_-]/g, '-');
-        await createJsonFile(backups.id, `Amanda_Clinica_${reason}_${stamp()}.json`, state);
+        await writeRotatingSnapshot(folderId, 'forcesave', FORCESAVE_SLOTS, state);
       }
       return file;
     },
@@ -596,6 +689,7 @@
       const user = Auth.cachedUser();
       if (user) localStorage.removeItem(folderKey(user.sub));
       this.currentFile = null;
+      this.stopAutosaveLoop();
       resolvedFolders.clear();
       resolvedIntegrationFiles.clear();
       integrationFileInflight.clear();

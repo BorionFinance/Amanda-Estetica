@@ -230,6 +230,7 @@ let STATE = null;
     if (reason) addAudit(reason, options.detail || '');
     await ClinicStorage.save(STATE);
     if (window.AmandaBorionInterop) AmandaBorionInterop.schedule(STATE); // protected interop seam
+    if (window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.markAutosaveDirty();
     updateSaveStatus('Salvo localmente', 'ok');
     if (data().settings.autosaveFolder !== false && options.folder !== false) scheduleFolderSave();
     if (data().settings.autosaveGoogle !== false && options.google !== false) scheduleGoogleDriveSave();

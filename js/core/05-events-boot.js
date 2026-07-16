@@ -18,7 +18,10 @@ let RESIZE_FRAME = 0;
     applyInterfaceMode();
     CURRENT_VIEW=(location.hash||'#dashboard').slice(1);
     if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
-    if(sessionStorage.getItem('amanda_clinica_unlocked')==='1')renderShell();else renderLogin();
+    if(sessionStorage.getItem('amanda_clinica_unlocked')==='1'){
+      renderShell();
+      if(window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.startAutosaveLoop(()=>STATE);
+    }else renderLogin();
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
     if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.10.6').catch(console.warn);

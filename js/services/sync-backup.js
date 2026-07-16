@@ -54,6 +54,7 @@ async function manualSave() {
         setCloudSyncStatus('syncing','Conectando ao Google');
         const connection=await GoogleDriveClinic.connect(true);
         await GoogleDriveClinic.save(STATE,{backup:true,reason:'primeira-conexao'});
+        GoogleDriveClinic.startAutosaveLoop(()=>STATE);
         setCloudSyncStatus('synced','Sincronizado com o Google');
         updateSaveStatus('Google Drive conectado','ok');
         toast(`Conta ${connection.user.email} conectada e primeiro backup criado.`);

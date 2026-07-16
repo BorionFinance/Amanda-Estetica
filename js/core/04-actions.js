@@ -16,7 +16,9 @@ async function handleAction(action, el) {
       'enter-profile':()=>enterProfile(id),
       'enter-profile-google':()=>enterProfileWithGoogle(id,el),
       'enter-profile-offline':()=>enterProfileOffline(id),
-      'lock-app':()=>{sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
+      'show-login-help':()=>showLoginHelpModal(),
+      'reset-device-state':()=>confirmResetAmandaDeviceState(),
+      'lock-app':()=>{GoogleDriveClinic?.stopAutosaveLoop?.();sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
       'create-profile':()=>openProfileForm(null),
       'profile-menu':()=>navTo('settings'),
       'edit-profile':()=>openProfileForm(activeProfile()),
@@ -158,16 +160,42 @@ async function handleAction(action, el) {
     completeProfileUnlock(profile,'test','',true);
   }
 
+  /* V1.16.0 — espelha a mecânica de entrada do Borion: depois de conectar, se já
+     existir um arquivo salvo na pasta do Drive mais novo que os dados deste
+     navegador, ele é carregado direto, sem perguntar nada (é a entrada normal,
+     não uma restauração manual). Se o dado local for o mais novo (ou a pasta
+     ainda não tiver nada), é ele que sobe — nunca perde trabalho não sincronizado
+     só porque a pessoa entrou de novo. Ao final, liga o autosave rotativo. */
+  async function applyGoogleDriveEntrySync(){
+    try{
+      const result = await GoogleDriveClinic.sync(STATE,{interactive:false,backup:true,reason:'entrada-google'});
+      if(result.direction==='remote' && result.state){
+        await ClinicStorage.createLocalBackup(STATE,'antes-de-entrar-google');
+        STATE=result.state;
+        data();
+        await runIntegrityAudit({repair:true,save:false});
+        await ClinicStorage.save(STATE);
+      }
+      setCloudSyncStatus('synced','Sincronizado com o Google');
+    }catch(error){
+      console.warn('[GoogleDriveClinic] sincronização de entrada falhou (login continua local):',error);
+      setCloudSyncStatus('failed','Não sincronizado com o Google');
+    }
+    GoogleDriveClinic.startAutosaveLoop(()=>STATE);
+  }
+
   async function enterProfileWithGoogle(id,button){
     if(LOGIN_GOOGLE_INFLIGHT)return await LOGIN_GOOGLE_INFLIGHT;
     const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
     const original=button?.innerHTML||'';
     LOGIN_GOOGLE_INFLIGHT=(async()=>{
-      if(!window.GoogleDriveClinic?.authenticate)throw new Error('O login Google ainda não está disponível. Atualize a página e tente novamente.');
+      if(!window.GoogleDriveClinic?.connect)throw new Error('O login Google ainda não está disponível. Atualize a página e tente novamente.');
       if(button){button.disabled=true;button.classList.add('is-loading');button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Conectando ao Google…</span>';}
-      const user=await window.GoogleDriveClinic.authenticate(true);
-      completeProfileUnlock(profile,'google',String(user?.email||''),true);
-      return user;
+      const connection=await GoogleDriveClinic.connect(true);
+      if(button)button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Sincronizando…</span>';
+      await applyGoogleDriveEntrySync();
+      completeProfileUnlock(profile,'google',String(connection.user?.email||''),true);
+      return connection.user;
     })().finally(()=>{
       if(button?.isConnected){button.disabled=false;button.classList.remove('is-loading');button.innerHTML=original;}
       LOGIN_GOOGLE_INFLIGHT=null;
@@ -178,6 +206,51 @@ async function handleAction(action, el) {
   function enterProfileOffline(id){
     const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
     completeProfileUnlock(profile,'test','',true);
+  }
+
+  /* V1.16.0 — painel "Instruções e mais opções" da tela de login, mesmo papel do
+     equivalente no Borion: explica como o "Entrar com Google" funciona e dá a
+     saída discreta de "limpar dados deste navegador" pra quando algo trava. */
+  function showLoginHelpModal(){
+    openModal({
+      title:'Instruções e mais opções',
+      sub:'Como o login com Google funciona nesta clínica.',
+      content:`<p>“Entrar com Google” usa a conta autorizada da clínica. Na primeira vez, escolha a pasta do Google Drive da Amanda Estética quando o seletor abrir — depois disso o app entra direto, já vinculado e sincronizado, sem precisar escolher de novo.</p>
+        <div style="text-align:center;margin-top:18px;"><button type="button" class="amanda-quiet-link" data-action="reset-device-state">Problemas para entrar? Limpar dados deste navegador</button></div>`,
+      cancelText:'Fechar'
+    });
+  }
+
+  function confirmResetAmandaDeviceState(){
+    closeModal();
+    confirmAction('Isso apaga os dados salvos só neste navegador (perfil, preferências e a conta Google lembrada aqui) e recarrega a página. Não afeta nada que já esteja salvo no Google Drive — só o que está neste dispositivo.',{
+      title:'Limpar dados deste navegador', confirmText:'Limpar e recarregar', cancelText:'Cancelar', tone:'danger'
+    }).then(ok=>{ if(ok) resetAmandaDeviceState(); });
+  }
+
+  async function resetAmandaDeviceState(){
+    try{
+      Object.keys(localStorage).forEach(key=>{ if(key.startsWith('amanda_clinica_')) localStorage.removeItem(key); });
+    }catch(error){ console.warn('[resetAmandaDeviceState] falha ao limpar localStorage:',error); }
+    try{
+      if(window.indexedDB && indexedDB.databases){
+        const dbs = await indexedDB.databases();
+        await Promise.all(dbs.map(db=> db.name ? new Promise(res=>{ const req=indexedDB.deleteDatabase(db.name); req.onsuccess=res; req.onerror=res; req.onblocked=res; }) : Promise.resolve()));
+      }else{
+        try{ indexedDB.deleteDatabase('amanda_clinica_db_v1'); }catch(_){}
+      }
+    }catch(error){ console.warn('[resetAmandaDeviceState] falha ao limpar IndexedDB:',error); }
+    try{
+      if('serviceWorker' in navigator){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for(const reg of regs){ await reg.unregister(); }
+      }
+      if(window.caches){
+        const keys = await caches.keys();
+        for(const key of keys){ await caches.delete(key); }
+      }
+    }catch(error){ console.warn('[resetAmandaDeviceState] falha ao limpar cache do PWA:',error); }
+    location.reload();
   }
 
   function hideLoginPinPanel(){
