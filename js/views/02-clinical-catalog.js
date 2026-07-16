@@ -164,6 +164,7 @@ function renderProtocols() {
   }
 
   function renderPhotos() {
+    if (PHOTO_NAV.clientId && !findClient(PHOTO_NAV.clientId)) PHOTO_NAV = { clientId: '', protocolId: '' };
     if (!PHOTO_NAV.clientId) return renderPhotoClients();
     if (!PHOTO_NAV.protocolId) return renderPhotoProtocols(PHOTO_NAV.clientId);
     return renderPhotoSessions(PHOTO_NAV.clientId, PHOTO_NAV.protocolId);
@@ -172,10 +173,25 @@ function renderProtocols() {
   function renderPhotoClients() {
     const grouped = {};
     data().photos.forEach(p => { if(!p.clientId) return; (grouped[p.clientId] ||= { clientId:p.clientId, clientName:p.clientName, items:[] }).items.push(p); });
-    const list = Object.values(grouped).filter(g=>containsSearch(g.clientName)).sort((a,b)=>(a.clientName||'').localeCompare(b.clientName||'','pt-BR'));
+    const archivedCount = Object.values(grouped).filter(g=>!!findClient(g.clientId)?.archived).length;
+    const list = Object.values(grouped)
+      .filter(g => { const archived = !!findClient(g.clientId)?.archived; return PHOTO_STATUS_FILTER==='archived' ? archived : !archived; })
+      .filter(g=>containsSearch(g.clientName)).sort((a,b)=>(a.clientName||'').localeCompare(b.clientName||'','pt-BR'));
     return `<section class="section-head">
       <div><span class="eyebrow">Evolução visual</span><h2>Fotos antes e depois</h2><p>Organizadas por cliente, protocolo e sessão.</p></div>
-      <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
+      <div class="head-actions">
+        ${expandableFilterControl({
+          ariaLabel:'Filtrar clientes nas fotos',
+          current:PHOTO_STATUS_FILTER,
+          action:'set-photo-status-filter',
+          className:'photo-status-filter-expandable',
+          options:[
+            {value:'active',icon:'users',label:'Ativas',attrs:'data-value="active"'},
+            {value:'archived',icon:'eyeOff',label:`Desativadas${archivedCount?` (${archivedCount})`:''}`,attrs:'data-value="archived"'}
+          ]
+        })}
+        <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
+      </div>
     </section>
     <section class="photo-grid photo-folder-grid">
       ${list.length ? list.map(g=>{
@@ -184,7 +200,12 @@ function renderProtocols() {
           ${photoThumb(cover)}
           <div class="photo-info"><h3>${esc(g.clientName)}</h3><span>${g.items.length} foto${g.items.length===1?'':'s'}</span></div>
         </button>`;
-      }).join('') : emptyState('Nenhuma foto registrada','Adicione uma foto de antes, depois ou comparativo.','add-photo','Adicionar foto')}
+      }).join('') : emptyState(
+        PHOTO_STATUS_FILTER==='archived' ? 'Nenhuma cliente desativada com fotos' : 'Nenhuma foto registrada',
+        PHOTO_STATUS_FILTER==='archived' ? 'Fotos de clientes desativadas continuam guardadas aqui.' : 'Adicione uma foto de antes, depois ou comparativo.',
+        PHOTO_STATUS_FILTER==='archived' ? '' : 'add-photo',
+        'Adicionar foto'
+      )}
     </section>`;
   }
 
@@ -196,7 +217,7 @@ function renderProtocols() {
     const list = Object.values(grouped).sort((a,b)=>(a.protocolName||'').localeCompare(b.protocolName||'','pt-BR'));
     return `<section class="section-head">
       <div><button type="button" class="breadcrumb-back" data-action="photo-back-clients">${icon('chevron',16)} ${esc(client?.name||'Cliente')}</button>
-      <span class="eyebrow">Protocolos fotografados</span><h2>${esc(client?.name||'Cliente')}</h2></div>
+      <span class="eyebrow">Protocolos fotografados</span><h2>${esc(client?.name||'Cliente')} ${client?.archived?chip('Desativada','warn'):''}</h2></div>
       <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
     </section>
     <section class="photo-grid photo-folder-grid">
@@ -220,7 +241,7 @@ function renderProtocols() {
     if (PHOTO_COMPARE_SELECTION.length) PHOTO_COMPARE_SELECTION = PHOTO_COMPARE_SELECTION.filter(id=>gallery.some(p=>p.id===id));
     return `<section class="section-head">
       <div><button type="button" class="breadcrumb-back" data-action="photo-open-client" data-id="${eattr(clientId)}">${icon('chevron',16)} ${esc(client?.name||'Cliente')}</button>
-      <span class="eyebrow">${esc(client?.name||'')}</span><h2>${esc(protocolName)}</h2><p>${gallery.length} foto${gallery.length===1?'':'s'} nesta pasta — nada é substituído, cada foto fica salva e visível aqui.</p></div>
+      <span class="eyebrow">${esc(client?.name||'')} ${client?.archived?chip('Desativada','warn'):''}</span><h2>${esc(protocolName)}</h2><p>${gallery.length} foto${gallery.length===1?'':'s'} nesta pasta — nada é substituído, cada foto fica salva e visível aqui.</p></div>
       <div class="photo-session-toolbar">
         ${latestAntes && latestDepois ? `<button class="btn secondary" data-action="photo-compare-pair" data-antes="${eattr(latestAntes.id)}" data-depois="${eattr(latestDepois.id)}">${icon('columns',17)} Comparar antes/depois</button>` : ''}
         <button class="btn secondary ${PHOTO_COMPARE_MODE?'is-active':''}" data-action="photo-toggle-compare-mode">${icon('check',17)} ${PHOTO_COMPARE_MODE?'Cancelar seleção':'Selecionar para comparar'}</button>

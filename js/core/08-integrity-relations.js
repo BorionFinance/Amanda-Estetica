@@ -574,17 +574,15 @@ async function deleteClientRecord(id) {
   const client=data().clients.find(x=>x.id===id); if(!client)return;
   const counts=dependencyCountsForClient(id),total=countTotal(counts);
   const detail=Object.entries(counts).filter(([,v])=>v).map(([k,v])=>`${v} ${k}`).join(', ');
-  const message=total
-    ? `Excluir ${client.name} e TODOS os ${total} registros vinculados (${detail})? Esta ação também restaura estoque de atendimentos e remove lançamentos financeiros relacionados.`
-    : `Excluir a cliente ${client.name}?`;
-  if(!await confirmAction(message))return;
-  const attendanceIds=new Set(data().attendances.filter(x=>x.clientId===id).map(x=>x.id));
-  data().attendances.filter(x=>attendanceIds.has(x.id)).forEach(restoreAttendanceInventory);
-  const packageIds=new Set(data().packages.filter(x=>x.clientId===id).map(x=>x.id));
+  if(total){
+    if(!await confirmAction(`${client.name} possui ${total} registro(s) vinculado(s) (${detail}). Para preservar o histórico e as fotos, ela será desativada em vez de excluída. Continuar?`))return;
+    client.archived=true;
+    await persist('Cliente desativada',{detail:`${client.name} · ${total} vínculo(s) preservados`}); closeModal(); renderView(); toast('Cliente desativada; histórico e fotos preservados.');
+    return;
+  }
+  if(!await confirmAction(`Excluir a cliente ${client.name}? Ela não possui nenhum registro vinculado.`))return;
   data().clients=data().clients.filter(x=>x.id!==id);
-  ['appointments','packages','attendances','anamneses','consents','photos'].forEach(key=>{data()[key]=data()[key].filter(x=>x.clientId!==id);});
-  data().finance=data().finance.filter(x=>x.clientId!==id && !attendanceIds.has(x.attendanceId) && !packageIds.has(x.packageId));
-  await persist('Cliente e vínculos excluídos',{detail:`${client.name} · ${total} vínculo(s)`}); closeModal(); renderView(); toast('Cliente e vínculos excluídos.');
+  await persist('Cliente excluída',{detail:client.name}); closeModal(); renderView(); toast('Cliente excluída.');
 }
 
 async function deleteProtocolRecord(id) {

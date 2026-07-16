@@ -238,7 +238,7 @@ function optionClients(current='') {
       wide:true,
       content:`<div class="client-detail-head">
         <span class="profile-avatar large">${esc(c.name.slice(0,1))}</span>
-        <div><h3>${esc(c.name)}</h3><span>${esc(c.phone||'Sem telefone')} · ${esc(c.city||'Cidade não informada')}</span></div>
+        <div><h3>${esc(c.name)} ${c.archived?chip('Desativada','warn'):''}</h3><span>${esc(c.phone||'Sem telefone')} · ${esc(c.city||'Cidade não informada')}</span></div>
         ${whatsappNumber(c.phone)?`<a class="btn secondary compact" href="https://wa.me/${whatsappNumber(c.phone)}" target="_blank" rel="noopener">${icon('phone',16)} WhatsApp</a>`:''}
       </div>
       <div class="quick-actions">
@@ -259,7 +259,7 @@ function optionClients(current='') {
         <section><h4>Resumo clínico</h4><div class="database-stats"><div><strong>${atts.length}</strong><span>Atendimentos</span></div><div><strong>${packs.length}</strong><span>Pacotes</span></div><div><strong>${anam.length}</strong><span>Anamneses</span></div><div><strong>${photos.length}</strong><span>Fotos</span></div><div><strong>${consents.length}</strong><span>Termos</span></div><div><strong>${appointments.length}</strong><span>Agenda</span></div></div></section>
       </div>`,
       submitText:'',
-      extraFooter:`<button type="button" class="btn danger-soft" data-action="delete-client" data-id="${eattr(c.id)}">${icon('trash',17)} Excluir cliente</button><button type="button" class="btn secondary" data-action="edit-client" data-id="${eattr(c.id)}">${icon('edit',17)} Editar cadastro</button>`
+      extraFooter:`<button type="button" class="btn danger-soft" data-action="delete-client" data-id="${eattr(c.id)}">${icon('trash',17)} Excluir cliente</button><button type="button" class="btn secondary" data-action="toggle-client-archive" data-id="${eattr(c.id)}">${c.archived?icon('refresh',17):icon('eyeOff',17)} ${c.archived?'Reativar cliente':'Desativar cliente'}</button><button type="button" class="btn secondary" data-action="edit-client" data-id="${eattr(c.id)}">${icon('edit',17)} Editar cadastro</button>`
     });
   }
 
