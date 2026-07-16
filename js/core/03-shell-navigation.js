@@ -37,6 +37,7 @@ function renderLogin(animationClass = '') {
       <footer class="login-footer">Modo de teste temporário: entrada sem senha. O login Google continua disponível para Drive e backups.</footer>
     </main>`;
     window.requestAnimationFrame(() => window.startLoginSignatureAnimation?.());
+    window.requestAnimationFrame(() => window.startLoginParticles?.());
   }
 
 
