@@ -1,0 +1,42 @@
+/** Amanda Estética v1.10.6 — avisos e confirmações com identidade visual do aplicativo. */
+#confirm-root{position:relative;z-index:340}
+body.app-confirm-open{overflow:hidden!important}
+.app-confirm-backdrop{
+  position:fixed;inset:0;z-index:340;display:grid;place-items:center;padding:22px;
+  background:rgba(48,32,42,.34);-webkit-backdrop-filter:blur(14px) saturate(120%);backdrop-filter:blur(14px) saturate(120%);
+  opacity:0;transition:opacity .18s ease;
+}
+.app-confirm-backdrop.is-open{opacity:1}
+.app-confirm-backdrop.is-closing{opacity:0;pointer-events:none}
+.app-confirm-dialog{
+  position:relative;width:min(430px,100%);overflow:hidden;padding:23px 23px 19px;
+  border:1px solid rgba(255,255,255,.72);border-radius:26px;
+  background:linear-gradient(145deg,rgba(255,255,255,.94),rgba(255,244,249,.90));
+  -webkit-backdrop-filter:blur(28px) saturate(155%);backdrop-filter:blur(28px) saturate(155%);
+  box-shadow:0 30px 90px rgba(88,47,67,.24),inset 0 1px 0 rgba(255,255,255,.90);
+  transform:translateY(14px) scale(.975);opacity:0;
+  transition:transform .26s cubic-bezier(.22,1,.36,1),opacity .18s ease;
+}
+.app-confirm-backdrop.is-open .app-confirm-dialog{transform:none;opacity:1}
+.app-confirm-dialog::before{
+  content:"";position:absolute;right:-55px;top:-70px;width:180px;height:180px;border-radius:50%;
+  background:radial-gradient(circle,rgba(244,180,205,.42),rgba(244,180,205,0) 68%);pointer-events:none;
+}
+.app-confirm-brand{display:inline-flex;align-items:center;gap:6px;margin-bottom:17px;color:var(--rose-dark,#ab3f6d)}
+.app-confirm-brand span{width:24px;height:24px;border-radius:9px;display:grid;place-items:center;background:rgba(212,95,146,.10);border:1px solid rgba(212,95,146,.12)}
+.app-confirm-brand small{font-size:9px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}
+.app-confirm-icon{width:48px;height:48px;border-radius:17px;display:grid;place-items:center;margin-bottom:15px;color:var(--rose-dark,#ab3f6d);background:linear-gradient(145deg,rgba(255,237,245,.94),rgba(247,211,226,.78));box-shadow:0 10px 24px rgba(178,91,128,.15)}
+.app-confirm-dialog.is-danger .app-confirm-icon{color:var(--danger,#c25566);background:linear-gradient(145deg,rgba(255,244,246,.96),rgba(248,218,224,.82))}
+.app-confirm-copy h2{margin:0;color:var(--ink,#2d2330);font-size:20px;letter-spacing:-.025em}
+.app-confirm-copy p{margin:9px 0 0;color:var(--muted,#7d6d76);font-size:12px;line-height:1.62;white-space:pre-line}
+.app-confirm-actions{display:grid;grid-template-columns:1fr 1.18fr;gap:9px;margin-top:22px}
+.app-confirm-actions .btn{min-height:45px;justify-content:center;border-radius:13px}
+.app-confirm-actions .btn.danger{color:#fff;background:linear-gradient(135deg,#cb6474,#ad4457);border-color:transparent;box-shadow:0 10px 23px rgba(174,68,87,.21)}
+.app-confirm-actions .btn.danger:hover{transform:translateY(-1px);box-shadow:0 14px 28px rgba(174,68,87,.27)}
+@media(max-width:600px){
+  .app-confirm-backdrop{align-items:end;padding:14px 12px max(14px,env(safe-area-inset-bottom))}
+  .app-confirm-dialog{width:100%;border-radius:26px;padding:21px 18px 17px}
+  .app-confirm-copy h2{font-size:19px}.app-confirm-copy p{font-size:12px}
+  .app-confirm-actions{grid-template-columns:1fr 1.15fr}.app-confirm-actions .btn{min-height:49px}
+}
+@media(prefers-reduced-motion:reduce){.app-confirm-backdrop,.app-confirm-dialog{transition:none!important}}

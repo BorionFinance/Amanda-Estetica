@@ -20,6 +20,7 @@ let STATE = null;
   let FAB_DRAG_STATE = null;
   let CLOUD_SYNC_STATE = 'disconnected';
   let CLOUD_SYNC_LABEL = 'Não sincronizado com o Google';
+  let ACTIVE_CONFIRM_CLOSE = null;
   const NAV_ORDER = ['dashboard','agenda','clients','protocols','packages','attendances','anamneses','consents','photos','products','finance','settings'];
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -260,8 +261,92 @@ let STATE = null;
     }, 3200);
   }
 
-  function confirmAction(message) {
-    return window.confirm(message);
+  function confirmAction(message, options = {}) {
+    if (ACTIVE_CONFIRM_CLOSE) ACTIVE_CONFIRM_CLOSE(false);
+
+    const root = $('#confirm-root') || (() => {
+      const node = document.createElement('div');
+      node.id = 'confirm-root';
+      node.setAttribute('aria-live', 'assertive');
+      document.body.appendChild(node);
+      return node;
+    })();
+
+    const destructive = options.tone === 'danger' || /excluir|apagar|substituir|desconectar|esquecer|cancelad|restaurar/i.test(String(message));
+    const title = options.title || (destructive ? 'Confirmar ação' : 'Confirmação');
+    const confirmText = options.confirmText || (destructive ? 'Confirmar' : 'Continuar');
+    const cancelText = options.cancelText || 'Cancelar';
+    const iconName = destructive ? 'trash' : 'sparkles';
+
+    return new Promise(resolve => {
+      let settled = false;
+      const template = document.createElement('template');
+      template.innerHTML = `<div class="app-confirm-backdrop" data-confirm-backdrop>
+        <section class="app-confirm-dialog ${destructive ? 'is-danger' : ''}" role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message">
+          <div class="app-confirm-brand"><span>${icon('sparkles',14)}</span><small>Amanda Estética</small></div>
+          <div class="app-confirm-icon">${icon(iconName,25)}</div>
+          <div class="app-confirm-copy">
+            <h2 id="app-confirm-title">${esc(title)}</h2>
+            <p id="app-confirm-message">${esc(message)}</p>
+          </div>
+          <footer class="app-confirm-actions">
+            <button type="button" class="btn ghost" data-confirm-cancel>${esc(cancelText)}</button>
+            <button type="button" class="btn ${destructive ? 'danger' : 'primary'}" data-confirm-accept>${destructive ? icon('check',17) : icon('sparkles',17)} ${esc(confirmText)}</button>
+          </footer>
+        </section>
+      </div>`;
+      root.replaceChildren(template.content.cloneNode(true));
+      document.body.classList.add('app-confirm-open');
+      const backdrop = root.firstElementChild;
+      const dialog = backdrop?.querySelector('.app-confirm-dialog');
+      const accept = backdrop?.querySelector('[data-confirm-accept]');
+      const cancel = backdrop?.querySelector('[data-confirm-cancel]');
+
+      const finish = result => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKeyDown, true);
+        document.body.classList.remove('app-confirm-open');
+        backdrop?.classList.remove('is-open');
+        backdrop?.classList.add('is-closing');
+        ACTIVE_CONFIRM_CLOSE = null;
+        window.setTimeout(() => {
+          if (root.firstElementChild === backdrop) root.replaceChildren();
+        }, 170);
+        resolve(Boolean(result));
+      };
+
+      const onKeyDown = event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          finish(false);
+        }
+        if (event.key === 'Enter' && document.activeElement !== cancel) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          finish(true);
+        }
+      };
+
+      ACTIVE_CONFIRM_CLOSE = finish;
+      accept?.addEventListener('click', () => finish(true));
+      cancel?.addEventListener('click', () => finish(false));
+      backdrop?.addEventListener('click', event => {
+        if (event.target === backdrop) finish(false);
+      });
+      dialog?.addEventListener('click', event => event.stopPropagation());
+      document.addEventListener('keydown', onKeyDown, true);
+
+      requestAnimationFrame(() => {
+        backdrop?.classList.add('is-open');
+        accept?.focus({preventScroll:true});
+      });
+    });
+  }
+
+  function cancelConfirmAction() {
+    if (ACTIVE_CONFIRM_CLOSE) ACTIVE_CONFIRM_CLOSE(false);
   }
 
   function emptyState(title, text, action = '', label = 'Adicionar') {

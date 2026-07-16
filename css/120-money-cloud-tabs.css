@@ -1,5 +1,5 @@
 /**
- * Amanda Estética v1.10.5 — máscara monetária, status de nuvem e ações rápidas.
+ * Amanda Estética v1.10.6 — máscara monetária, status de nuvem e ações rápidas.
  */
 .money-field input[data-money-input]{font-variant-numeric:tabular-nums;font-weight:750;letter-spacing:.015em;padding-right:15px}
 .money-field input[data-money-input]::selection{background:rgba(200,95,134,.22)}

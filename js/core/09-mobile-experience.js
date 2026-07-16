@@ -1,6 +1,6 @@
 'use strict';
 
-/* Amanda Estética v1.10.5 — experiência mobile alinhada ao Borion Finance. */
+/* Amanda Estética v1.10.6 — experiência mobile alinhada ao Borion Finance. */
 (() => {
   const MobileAmanda = {
     initialized:false,
@@ -102,7 +102,7 @@
       if(!this.isMobile() || this.guardArmed)return;
       history.replaceState({...(history.state||{}),__amandaMobileBase:true},'',location.href);
       this.armBackGuard();
-      window.addEventListener('popstate',()=>{
+      window.addEventListener('popstate',async()=>{
         if(this.allowExit || !this.isMobile())return;
         if(this.closeTopLayer()){this.armBackGuard();return;}
         const previous=this.viewStack.pop();
@@ -115,13 +115,15 @@
           this.haptic(7);
           return;
         }
-        const leave=window.confirm('Deseja sair do Amanda Estética?');
+        const leave=await confirmAction('Deseja sair do Amanda Estética?', {title:'Sair do aplicativo', confirmText:'Sair'});
         if(leave){this.allowExit=true;history.back();return;}
         this.armBackGuard();
       });
     },
 
     closeTopLayer(){
+      const confirm=document.querySelector('#confirm-root .app-confirm-backdrop');
+      if(confirm){try{cancelConfirmAction();}catch(_){confirm.remove();}return true;}
       const auth=document.querySelector('.login-auth-backdrop');
       if(auth){try{hideLoginPinPanel();}catch(_){auth.remove();}return true;}
       if(document.querySelector('#picker-root .ios-wheel-sheet')){try{closeWheelPicker();}catch(_){document.getElementById('picker-root').replaceChildren();}return true;}

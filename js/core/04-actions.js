@@ -68,7 +68,7 @@ async function handleAction(action, el) {
       'delete-consent':()=>deleteConsentRecord(id),
       'add-photo':()=>openPhotoForm(),
       'edit-photo':()=>openPhotoForm(id),
-      'delete-photo':async()=>{if(confirmAction('Excluir esta foto?')){data().photos=data().photos.filter(x=>x.id!==id);await persist('Foto excluída');closeModal();renderView();toast('Foto excluída.');}},
+      'delete-photo':async()=>{if(await confirmAction('Excluir esta foto?')){data().photos=data().photos.filter(x=>x.id!==id);await persist('Foto excluída');closeModal();renderView();toast('Foto excluída.');}},
       'add-product':()=>openProductForm(),
       'edit-product':()=>openProductForm(id),
       'delete-product':()=>deleteProductRecord(id),
@@ -88,12 +88,12 @@ async function handleAction(action, el) {
       'connect-folder':connectFolder,
       'sync-folder':syncFolder,
       'load-folder':loadFolder,
-      'disconnect-folder':async()=>{if(confirmAction('Esquecer a pasta conectada neste navegador? Os arquivos não serão excluídos.')){await ClinicStorage.forgetFolderHandle();localStorage.removeItem('amanda_clinica_last_folder_save');renderView();toast('Pasta esquecida.');}},
+      'disconnect-folder':async()=>{if(await confirmAction('Esquecer a pasta conectada neste navegador? Os arquivos não serão excluídos.')){await ClinicStorage.forgetFolderHandle();localStorage.removeItem('amanda_clinica_last_folder_save');renderView();toast('Pasta esquecida.');}},
       'export-json':()=>ClinicStorage.downloadJson(STATE),
       'import-json':()=>$('#json-file-input')?.click(),
       'show-backups':showBackups,
       'show-integrity-report':showIntegrityReport,
-      'restore-backup':async()=>{if(confirmAction('Restaurar este backup e substituir os dados atuais?')){const restored=await ClinicStorage.restoreLocalBackup(id);if(restored){await ClinicStorage.createLocalBackup(STATE,'antes-de-restaurar');STATE=restored;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);closeModal();renderShell();toast('Backup restaurado e vínculos verificados.');}}},
+      'restore-backup':async()=>{if(await confirmAction('Restaurar este backup e substituir os dados atuais?')){const restored=await ClinicStorage.restoreLocalBackup(id);if(restored){await ClinicStorage.createLocalBackup(STATE,'antes-de-restaurar');STATE=restored;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);closeModal();renderShell();toast('Backup restaurado e vínculos verificados.');}}},
       'install-app':async()=>{if(deferredInstallPrompt){deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice;deferredInstallPrompt=null;}}
     };
     if(map[action])await map[action]();

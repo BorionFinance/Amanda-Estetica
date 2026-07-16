@@ -514,7 +514,7 @@ function countTotal(object) {
 
 async function deleteAppointmentRecord(id) {
   const item = data().appointments.find(x=>x.id===id);
-  if (!item || !confirmAction(`Excluir o agendamento de ${item.clientName || 'cliente'}?`)) return;
+  if (!item || !await confirmAction(`Excluir o agendamento de ${item.clientName || 'cliente'}?`)) return;
   data().appointments = data().appointments.filter(x=>x.id!==id);
   data().attendances.forEach(att=>{if(att.appointmentId===id)att.appointmentId='';});
   await persist('Agendamento excluído',{detail:`${item.clientName} · ${item.protocolName}`});
@@ -523,7 +523,7 @@ async function deleteAppointmentRecord(id) {
 
 async function deleteAttendanceRecord(id) {
   const item = data().attendances.find(x=>x.id===id);
-  if (!item || !confirmAction(`Excluir este atendimento? O estoque, o pacote e o financeiro serão recalculados.`)) return;
+  if (!item || !await confirmAction(`Excluir este atendimento? O estoque, o pacote e o financeiro serão recalculados.`)) return;
   restoreAttendanceInventory(item);
   data().attendances = data().attendances.filter(x=>x.id!==id);
   removeAutoFinance(fin=>fin.attendanceId===id);
@@ -542,7 +542,7 @@ async function deletePackageRecord(id) {
   const sessions = data().attendances.filter(x=>x.packageId===id);
   const financeEntries = data().finance.filter(x=>x.packageId===id);
   if (sessions.length || financeEntries.length || num(pkg.receivedValue)>0) {
-    if (!confirmAction(`Este pacote possui histórico clínico ou financeiro. Para não apagar sessões e valores recebidos, ele será cancelado e preservado. O saldo pendente será encerrado. Continuar?`)) return;
+    if (!await confirmAction(`Este pacote possui histórico clínico ou financeiro. Para não apagar sessões e valores recebidos, ele será cancelado e preservado. O saldo pendente será encerrado. Continuar?`)) return;
     pkg.status='Cancelado';
     pkg.archived=true;
     syncFinanceForPackage(pkg);
@@ -550,7 +550,7 @@ async function deletePackageRecord(id) {
     closeModal(); renderView(); toast('Pacote cancelado; sessões e valores recebidos foram preservados.');
     return;
   }
-  if (!confirmAction('Excluir este pacote vazio?')) return;
+  if (!await confirmAction('Excluir este pacote vazio?')) return;
   data().packages = data().packages.filter(x=>x.id!==id);
   await persist('Pacote excluído',{detail:`${pkg.clientName} · ${pkg.protocolName}`});
   closeModal(); renderView(); toast('Pacote excluído.');
@@ -558,14 +558,14 @@ async function deletePackageRecord(id) {
 
 async function deleteAnamnesisRecord(id) {
   const item=data().anamneses.find(x=>x.id===id);
-  if(!item||!confirmAction('Excluir definitivamente esta anamnese?'))return;
+  if(!item||!await confirmAction('Excluir definitivamente esta anamnese?'))return;
   data().anamneses=data().anamneses.filter(x=>x.id!==id);
   await persist('Anamnese excluída',{detail:item.clientName}); closeModal(); renderView(); toast('Anamnese excluída.');
 }
 
 async function deleteConsentRecord(id) {
   const item=data().consents.find(x=>x.id===id);
-  if(!item||!confirmAction('Excluir definitivamente este consentimento?'))return;
+  if(!item||!await confirmAction('Excluir definitivamente este consentimento?'))return;
   data().consents=data().consents.filter(x=>x.id!==id);
   await persist('Consentimento excluído',{detail:`${item.clientName} · ${item.protocolName}`}); closeModal(); renderView(); toast('Consentimento excluído.');
 }
@@ -577,7 +577,7 @@ async function deleteClientRecord(id) {
   const message=total
     ? `Excluir ${client.name} e TODOS os ${total} registros vinculados (${detail})? Esta ação também restaura estoque de atendimentos e remove lançamentos financeiros relacionados.`
     : `Excluir a cliente ${client.name}?`;
-  if(!confirmAction(message))return;
+  if(!await confirmAction(message))return;
   const attendanceIds=new Set(data().attendances.filter(x=>x.clientId===id).map(x=>x.id));
   data().attendances.filter(x=>attendanceIds.has(x.id)).forEach(restoreAttendanceInventory);
   const packageIds=new Set(data().packages.filter(x=>x.clientId===id).map(x=>x.id));
@@ -599,11 +599,11 @@ async function deleteProtocolRecord(id) {
   };
   const total=countTotal(linked);
   if(total){
-    if(!confirmAction(`Este protocolo possui ${total} vínculo(s). Em vez de apagar o histórico, ele será arquivado e não aparecerá em novos cadastros. Continuar?`))return;
+    if(!await confirmAction(`Este protocolo possui ${total} vínculo(s). Em vez de apagar o histórico, ele será arquivado e não aparecerá em novos cadastros. Continuar?`))return;
     protocol.archived=true;
     await persist('Protocolo arquivado',{detail:protocol.name}); closeModal(); renderView(); toast('Protocolo arquivado; histórico preservado.'); return;
   }
-  if(!confirmAction(`Excluir o protocolo ${protocol.name}?`))return;
+  if(!await confirmAction(`Excluir o protocolo ${protocol.name}?`))return;
   data().protocols=data().protocols.filter(x=>x.id!==id);
   await persist('Protocolo excluído',{detail:protocol.name}); closeModal(); renderView(); toast('Protocolo excluído.');
 }
@@ -613,11 +613,11 @@ async function deleteProductRecord(id) {
   const linkedProtocols=data().protocols.filter(p=>(p.products||[]).some(link=>link.productId===id)).length;
   const movements=data().attendances.filter(a=>(a.inventoryMovements||[]).some(move=>move.productId===id)).length;
   if(linkedProtocols||movements){
-    if(!confirmAction(`Este produto aparece em ${linkedProtocols} protocolo(s) e ${movements} histórico(s) de atendimento. Ele será arquivado para preservar o histórico. Continuar?`))return;
+    if(!await confirmAction(`Este produto aparece em ${linkedProtocols} protocolo(s) e ${movements} histórico(s) de atendimento. Ele será arquivado para preservar o histórico. Continuar?`))return;
     product.archived=true;
     await persist('Produto arquivado',{detail:product.name}); closeModal(); renderView(); toast('Produto arquivado; histórico preservado.'); return;
   }
-  if(!confirmAction(`Excluir o produto ${product.name}?`))return;
+  if(!await confirmAction(`Excluir o produto ${product.name}?`))return;
   data().products=data().products.filter(x=>x.id!==id);
   await persist('Produto excluído',{detail:product.name}); closeModal(); renderView(); toast('Produto excluído.');
 }
@@ -642,7 +642,7 @@ async function deleteFinanceRecordSafe(id) {
     toast('Este lançamento é automático. Edite ou exclua o atendimento/pacote de origem.','warn');
     return;
   }
-  if(!confirmAction('Excluir este lançamento financeiro?'))return;
+  if(!await confirmAction('Excluir este lançamento financeiro?'))return;
   data().finance=data().finance.filter(x=>x.id!==id);
   await persist('Lançamento excluído',{detail:entry.description}); closeModal(); renderView(); toast('Lançamento excluído.');
 }
@@ -654,7 +654,7 @@ async function deleteProfileRecord(id) {
   if(STATE.profiles.length<=1){toast('O perfil principal não pode ser excluído porque é o único acesso do aplicativo.','warn');return;}
   const profileData=STATE.dataByProfile?.[id];
   const records=profileData?Object.values(profileData).filter(Array.isArray).reduce((sum,list)=>sum+list.length,0):0;
-  if(!confirmAction(`Excluir o perfil ${profile.name} e os ${records} registro(s) exclusivos dele? Um backup local será criado antes.`))return;
+  if(!await confirmAction(`Excluir o perfil ${profile.name} e os ${records} registro(s) exclusivos dele? Um backup local será criado antes.`))return;
   await ClinicStorage.createLocalBackup(STATE,'antes-de-excluir-perfil');
   STATE.profiles=STATE.profiles.filter(item=>item.id!==id);
   if(STATE.dataByProfile)delete STATE.dataByProfile[id];

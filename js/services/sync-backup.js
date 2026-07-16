@@ -75,7 +75,7 @@ async function manualSave() {
       updateSaveStatus('Sincronizando com Google…','warn');
       const result=await GoogleDriveClinic.sync(STATE,{interactive:true,backup:true,reason:'sincronizacao'});
       if(result.direction==='remote'){
-        if(confirmAction('O arquivo do Google Drive é mais recente. Deseja carregá-lo e substituir os dados deste navegador? Um backup local será criado antes.')){
+        if(await confirmAction('O arquivo do Google Drive é mais recente. Deseja carregá-lo e substituir os dados deste navegador? Um backup local será criado antes.')){
           await ClinicStorage.createLocalBackup(STATE,'antes-de-carregar-google');
           STATE=result.state;
           data();
@@ -110,7 +110,7 @@ async function manualSave() {
       setCloudSyncStatus('syncing','Sincronizando com o Google');
       updateSaveStatus('Carregando do Google…','warn');
       const remote=await GoogleDriveClinic.load({interactive:true});
-      if(!confirmAction('Carregar o JSON do Google Drive substituirá os dados deste navegador. Um backup local será criado antes. Continuar?')){
+      if(!await confirmAction('Carregar o JSON do Google Drive substituirá os dados deste navegador. Um backup local será criado antes. Continuar?')){
         setCloudSyncStatus('failed','Não sincronizado com o Google');
         updateSaveStatus('Carregamento cancelado','warn');
         return;
@@ -132,7 +132,7 @@ async function manualSave() {
   }
 
   async function disconnectGoogle() {
-    if(!confirmAction('Desconectar a conta e esquecer a pasta Google neste navegador? Nenhum arquivo será excluído do Drive.'))return;
+    if(!await confirmAction('Desconectar a conta e esquecer a pasta Google neste navegador? Nenhum arquivo será excluído do Drive.'))return;
     GoogleDriveClinic.disconnect();
     localStorage.removeItem('amanda_clinica_last_google_save');
     setCloudSyncStatus('disconnected','Não sincronizado com o Google');
@@ -161,7 +161,7 @@ async function manualSave() {
       let remote=null;
       try{remote=await ClinicStorage.readFromFolder({handle});}catch(error){if(error.name!=='NotFoundError')console.warn(error);}
       if(remote?.state?.updatedAt && new Date(remote.state.updatedAt)>new Date(STATE.updatedAt)){
-        const useRemote=confirmAction('O arquivo da pasta é mais recente. Deseja carregar os dados da pasta e substituir o que está neste navegador?');
+        const useRemote=await confirmAction('O arquivo da pasta é mais recente. Deseja carregar os dados da pasta e substituir o que está neste navegador?');
         if(useRemote){
           await ClinicStorage.createLocalBackup(STATE,'antes-de-carregar-drive');
           STATE=remote.state;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);updateSaveStatus('Dados carregados do Drive','ok');renderShell();toast('Dados mais recentes carregados da pasta.');return;
@@ -177,7 +177,7 @@ async function manualSave() {
       let handle=await ClinicStorage.getFolderHandle();
       if(!handle)handle=await ClinicStorage.connectFolder();
       const remote=await ClinicStorage.readFromFolder({handle,requestPermission:true});
-      if(!confirmAction('Carregar o JSON da pasta substituirá os dados deste navegador. Um backup local será criado antes. Continuar?'))return;
+      if(!await confirmAction('Carregar o JSON da pasta substituirá os dados deste navegador. Um backup local será criado antes. Continuar?'))return;
       await ClinicStorage.createLocalBackup(STATE,'antes-de-carregar-pasta');
       STATE=remote.state;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);renderShell();toast('Dados carregados da pasta.');
     }catch(error){toast(error.message,'error');}
