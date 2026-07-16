@@ -140,12 +140,23 @@ function restoreAttendanceInventory(attendance) {
   });
 }
 
-function upsertAutoFinance(match, payload) {
+/* Gera um ID fixo e permanente para um lançamento automático, ancorado na
+   entidade de origem (atendimento ou pacote). Diferente de uid('FN') — que
+   sorteia um valor novo a cada chamada — este ID é sempre o mesmo para o
+   mesmo atendimento/pacote, mesmo que o lançamento seja removido e
+   regerado (ex.: status desfeito e refeito). Isso é o que garante que a
+   integração com o Borion nunca veja o "mesmo" lançamento como um
+   registro novo, evitando duplicidade lá do outro lado. */
+function anchoredFinanceId(kind, ...parts) {
+  return `FN-${kind}-${parts.map(p => String(p)).join('-')}`;
+}
+
+function upsertAutoFinance(match, payload, anchorId) {
   const d = data();
   const matches = d.finance.filter(match);
   let entry = matches[0];
   if (!entry) {
-    entry = { id: uid('FN') };
+    entry = { id: anchorId || uid('FN') };
     d.finance.push(entry);
   }
   const next={...payload,sourceLocked:true};
@@ -185,7 +196,7 @@ function syncFinanceForAttendance(attendance) {
     costCenter: 'Atendimento',
     origin: 'Atendimento',
     notes: 'Gerado automaticamente pelo atendimento.'
-  });
+  }, anchoredFinanceId('ATT', attendance.id));
 }
 
 function syncFinanceForPackage(pkg) {
@@ -216,7 +227,7 @@ function syncFinanceForPackage(pkg) {
       costCenter: 'Pacotes',
       origin: 'Pacote',
       notes: 'Gerado automaticamente pelo pacote.'
-    });
+    }, anchoredFinanceId('PKG', pkg.id, 'RECEIVED'));
   } else removeAutoFinance(paidMatch);
   if (pending > 0) {
     upsertAutoFinance(pendingMatch, {
@@ -236,7 +247,7 @@ function syncFinanceForPackage(pkg) {
       costCenter: 'Pacotes',
       origin: 'Pacote',
       notes: 'Gerado automaticamente pelo saldo do pacote.'
-    });
+    }, anchoredFinanceId('PKG', pkg.id, 'PENDING'));
   } else removeAutoFinance(pendingMatch);
 }
 
@@ -258,8 +269,8 @@ function syncAllAutoFinance() {
     manual.push(entry);
   });
   const generated=[];
-  const materialize=(existing,payload)=>{
-    const entry=existing||{id:uid('FN')};
+  const materialize=(existing,payload,anchorId)=>{
+    const entry=existing||{id:anchorId||uid('FN')};
     const next={...payload,sourceLocked:true};
     const changed=Object.entries(next).some(([key,value])=>entry[key]!==value);
     if(changed)Object.assign(entry,next,{updatedAt:nowIso()});
@@ -273,7 +284,7 @@ function syncAllAutoFinance() {
       protocolId:attendance.protocolId,protocolName:attendance.protocolName,paymentMethod:attendance.paymentMethod||'',
       value:num(attendance.chargedValue),status:attendance.paid?'Pago':'Pendente',costCenter:'Atendimento',origin:'Atendimento',
       notes:'Gerado automaticamente pelo atendimento.'
-    });
+    }, anchoredFinanceId('ATT', attendance.id));
   });
   d.packages.forEach(pkg=>{
     const hasExisting=packageExisting.has(`${pkg.id}:received`)||packageExisting.has(`${pkg.id}:pending`);
@@ -287,13 +298,13 @@ function syncAllAutoFinance() {
       description:`${pkg.protocolName||'Pacote'} · valor recebido`,clientId:pkg.clientId,clientName:pkg.clientName,
       protocolId:pkg.protocolId,protocolName:pkg.protocolName,paymentMethod:pkg.paymentMethod||'A definir',value:received,
       status:'Pago',costCenter:'Pacotes',origin:'Pacote',notes:'Gerado automaticamente pelo pacote.'
-    });
+    }, anchoredFinanceId('PKG', pkg.id, 'RECEIVED'));
     if(pending>0)materialize(packageExisting.get(`${pkg.id}:pending`),{
       packageId:pkg.id,packageFinanceKind:'pending',date:pkg.startDate||todayIso(),type:'income',category:'Pacote',
       description:`${pkg.protocolName||'Pacote'} · saldo a receber`,clientId:pkg.clientId,clientName:pkg.clientName,
       protocolId:pkg.protocolId,protocolName:pkg.protocolName,paymentMethod:'A definir',value:pending,
       status:'Pendente',costCenter:'Pacotes',origin:'Pacote',notes:'Gerado automaticamente pelo saldo do pacote.'
-    });
+    }, anchoredFinanceId('PKG', pkg.id, 'PENDING'));
   });
   d.finance=[...manual,...generated];
 }
