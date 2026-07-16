@@ -93,3 +93,33 @@
   .modal-footer-primary{align-items:center}
   .modal-footer-primary .btn{min-width:120px}
 }
+
+/* =========================================================
+   Campos de valor — selo "R$" fixo (inspirado no Borion)
+   O valor digitado passa a ser só o número; o "R$" vira um
+   selo dourado fixo à esquerda, e o número fica alinhado à direita.
+   ========================================================= */
+.field.money-field{position:relative}
+.field.money-field input[data-money-input]{
+  padding-left:54px!important;
+  text-align:right;
+}
+.field.money-field::after{
+  content:'R$';
+  position:absolute;
+  left:12px;bottom:7px;
+  min-width:30px;height:24px;
+  border-radius:999px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;letter-spacing:.02em;
+  color:#4a3312;
+  background:linear-gradient(180deg,#ecd39a,var(--gold));
+  box-shadow:0 5px 14px rgba(181,139,69,.28);
+  pointer-events:none;
+}
+@media(max-width:860px){
+  .modal-body .field.money-field::after{bottom:12px;height:26px}
+  .modal-body .form-grid{gap:18px}
+  .modal-body .field{gap:8px}
+  .modal-body .field>span{font-size:11px}
+}

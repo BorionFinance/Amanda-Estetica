@@ -27,14 +27,14 @@ function parseMoneyInputValue(value) {
 function formatMoneyInputValue(value = 0) {
   const cents = Math.max(0, Math.round(parseMoneyInputValue(value) * 100));
   const integer = Math.floor(cents / 100).toLocaleString('pt-BR', { minimumIntegerDigits:2 });
-  return `R$${integer},${String(cents % 100).padStart(2,'0')}`;
+  return `${integer},${String(cents % 100).padStart(2,'0')}`;
 }
 
 function formatMoneyInputFromDigits(value = '') {
   const digits = String(value).replace(/\D/g,'');
   const cents = Number(digits || 0);
   const integer = Math.floor(cents / 100).toLocaleString('pt-BR', { minimumIntegerDigits:2 });
-  return `R$${integer},${String(cents % 100).padStart(2,'0')}`;
+  return `${integer},${String(cents % 100).padStart(2,'0')}`;
 }
 
 function setMoneyFieldValue(input, value) {
