@@ -44,6 +44,9 @@ function optionClients(current='') {
         ${textarea('Preparos / orientações','preparation',a.preparation,{rows:3})}
         ${textarea('Observações','notes',a.notes,{rows:3})}
       </div><input type="hidden" name="id" value="${eattr(a.id||'')}">`,
+      deleteAction:existing?'delete-appointment':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir agendamento',
       submitText:'Salvar agendamento',
       onSubmit: async form=>{
         const o=formObject(form);
@@ -70,18 +73,18 @@ function optionClients(current='') {
       const c=findClient(clientSel.value);
       const p=findProtocol(protocolSel.value);
       if(p){
-        if(!existing){ form.elements.duration.value=p.duration||60; form.elements.value.value=p.price||0; }
+        if(!existing){ form.elements.duration.value=p.duration||60; setMoneyFieldValue(form.elements.value,p.price||0); }
         if(!form.elements.preparation.value) form.elements.preparation.value=p.preparation||'';
       }
       const packageSel=form.elements.packageId;
       const selectedPackage=packageSel.value||'';
       packageSel.innerHTML='<option value="">Selecione</option>'+optionPackages(c?.id||'',selectedPackage,p?.id||'').map(opt=>`<option value="${eattr(opt.value)}">${esc(opt.label)}</option>`).join('');
       packageSel.value=selectedPackage;
-      if(packageSel.value&&!existing)form.elements.value.value=0;
+      if(packageSel.value&&!existing)setMoneyFieldValue(form.elements.value,0);
     };
     clientSel.addEventListener('change',autofill);
     protocolSel.addEventListener('change',autofill);
-    form.elements.packageId.addEventListener('change',()=>{if(form.elements.packageId.value&&!existing)form.elements.value.value=0;});
+    form.elements.packageId.addEventListener('change',()=>{if(form.elements.packageId.value&&!existing)setMoneyFieldValue(form.elements.value,0);});
   }
 
   function openClientForm(id='') {
@@ -109,6 +112,9 @@ function optionClients(current='') {
         ${textarea('Contraindicações','contraindications',c.contraindications,{rows:2})}
         ${textarea('Observações','notes',c.notes,{rows:2})}
       </div><input type="hidden" name="id" value="${eattr(c.id||'')}">`,
+      deleteAction:existing?'delete-client':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir cliente',
       submitText:'Salvar cliente',
       onSubmit:async form=>{
         const o=formObject(form);
@@ -184,6 +190,9 @@ function optionClients(current='') {
         ${textarea('Preparos / orientações','preparation',p.preparation,{rows:3,className:'span-2'})}
         ${textarea('Observações','notes',p.notes,{rows:3,className:'span-2'})}
       </div><input type="hidden" name="originalId" value="${eattr(p.id||'')}">`,
+      deleteAction:existing?'delete-protocol':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir/arquivar protocolo',
       submitText:'Salvar protocolo',
       onSubmit:async form=>{
         const o=formObject(form);

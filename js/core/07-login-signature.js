@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Amanda Estética v1.10.4 — assinatura consolidada em um único WebP animado.
+ * Amanda Estética v1.10.5 — assinatura consolidada em um único WebP animado.
  * A sequência original foi preservada, mas sem 113 arquivos e 113 requisições separadas.
  */
 (() => {

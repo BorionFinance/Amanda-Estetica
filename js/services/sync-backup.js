@@ -13,6 +13,7 @@ async function manualSave() {
     if (manualSaveInflight) return await manualSaveInflight;
     manualSaveInflight = (async () => {
       updateSaveStatus('Salvando…','warn');
+      setCloudSyncStatus(window.GoogleDriveClinic?.isConfigured?.()?'syncing':'disconnected',window.GoogleDriveClinic?.isConfigured?.()?'Sincronizando com o Google':'Não sincronizado com o Google');
       await ClinicStorage.save(STATE);
       await ClinicStorage.createLocalBackup(STATE,'manual');
       const saved=['navegador'];
@@ -22,7 +23,8 @@ async function manualSave() {
         try{
           await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual'});
           saved.push('Google Drive');
-        }catch(error){failures.push(`Google Drive: ${error.message}`);}
+          setCloudSyncStatus('synced','Sincronizado com o Google');
+        }catch(error){setCloudSyncStatus('failed','Não sincronizado com o Google');failures.push(`Google Drive: ${error.message}`);}
       }
 
       try{
@@ -49,12 +51,15 @@ async function manualSave() {
     connectGoogleInflight = (async () => {
       try{
         updateSaveStatus('Conectando ao Google…','warn');
+        setCloudSyncStatus('syncing','Conectando ao Google');
         const connection=await GoogleDriveClinic.connect(true);
         await GoogleDriveClinic.save(STATE,{backup:true,reason:'primeira-conexao'});
+        setCloudSyncStatus('synced','Sincronizado com o Google');
         updateSaveStatus('Google Drive conectado','ok');
         toast(`Conta ${connection.user.email} conectada e primeiro backup criado.`);
         renderView();
       }catch(error){
+        setCloudSyncStatus('failed','Não sincronizado com o Google');
         updateSaveStatus('Salvo localmente','ok');
         toast(error.message,'error');
       }
@@ -66,6 +71,7 @@ async function manualSave() {
     if (syncGoogleInflight) return await syncGoogleInflight;
     syncGoogleInflight = (async () => {
     try{
+      setCloudSyncStatus('syncing','Sincronizando com o Google');
       updateSaveStatus('Sincronizando com Google…','warn');
       const result=await GoogleDriveClinic.sync(STATE,{interactive:true,backup:true,reason:'sincronizacao'});
       if(result.direction==='remote'){
@@ -75,19 +81,23 @@ async function manualSave() {
           data();
           await runIntegrityAudit({repair:true,save:false});
           await ClinicStorage.save(STATE);
+          setCloudSyncStatus('synced','Sincronizado com o Google');
           updateSaveStatus('Dados carregados do Google Drive','ok');
           renderShell();
           toast('Dados mais recentes carregados do Google Drive.');
           return;
         }
+        setCloudSyncStatus('failed','Não sincronizado com o Google');
         updateSaveStatus('Google Drive tem versão mais recente','warn');
         toast('Nada foi substituído. Use “Carregar do Drive” quando estiver pronta.','warn');
         return;
       }
+      setCloudSyncStatus('synced','Sincronizado com o Google');
       updateSaveStatus('Google Drive sincronizado','ok');
       toast(result.created?'Arquivo da clínica criado no Google Drive.':'Sincronização com Google Drive concluída.');
       renderView();
     }catch(error){
+      setCloudSyncStatus('failed','Não sincronizado com o Google');
       updateSaveStatus('Google Drive pendente','warn');
       toast(error.message,'error');
     }
@@ -97,9 +107,11 @@ async function manualSave() {
 
   async function loadGoogle() {
     try{
+      setCloudSyncStatus('syncing','Sincronizando com o Google');
       updateSaveStatus('Carregando do Google…','warn');
       const remote=await GoogleDriveClinic.load({interactive:true});
       if(!confirmAction('Carregar o JSON do Google Drive substituirá os dados deste navegador. Um backup local será criado antes. Continuar?')){
+        setCloudSyncStatus('failed','Não sincronizado com o Google');
         updateSaveStatus('Carregamento cancelado','warn');
         return;
       }
@@ -108,10 +120,12 @@ async function manualSave() {
       data();
       await runIntegrityAudit({repair:true,save:false});
       await ClinicStorage.save(STATE);
+      setCloudSyncStatus('synced','Sincronizado com o Google');
       updateSaveStatus('Dados carregados do Google Drive','ok');
       renderShell();
       toast('Dados carregados do Google Drive.');
     }catch(error){
+      setCloudSyncStatus('failed','Não sincronizado com o Google');
       updateSaveStatus('Carregamento pendente','warn');
       toast(error.message,'error');
     }
@@ -121,6 +135,7 @@ async function manualSave() {
     if(!confirmAction('Desconectar a conta e esquecer a pasta Google neste navegador? Nenhum arquivo será excluído do Drive.'))return;
     GoogleDriveClinic.disconnect();
     localStorage.removeItem('amanda_clinica_last_google_save');
+    setCloudSyncStatus('disconnected','Não sincronizado com o Google');
     updateSaveStatus('Google Drive desconectado','warn');
     renderView();
     toast('Conta Google desconectada deste navegador.');

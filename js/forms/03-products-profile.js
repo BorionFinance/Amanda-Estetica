@@ -24,6 +24,9 @@ function openProductForm(id='') {
         ${field('Estoque mínimo','minStock',p.minStock,'number',{min:0,step:'0.01'})}
         ${textarea('Observações','notes',p.notes,{rows:3,className:'span-2'})}
       </div><input type="hidden" name="originalId" value="${eattr(p.id||'')}">`,
+      deleteAction:existing?'delete-product':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir/arquivar produto',
       submitText:'Salvar produto',
       onSubmit:async form=>{
         const o=formObject(form),qty=num(o.packageQty),cost=num(o.packageCost),usage=num(o.usagePerService);
@@ -60,6 +63,9 @@ function openProductForm(id='') {
         ${field('Origem','origin',f.origin||'Manual')}
         ${textarea('Observações','notes',f.notes,{rows:3,className:'span-2'})}
       </div><input type="hidden" name="id" value="${eattr(f.id||'')}">`,
+      deleteAction:existing?'delete-finance':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir lançamento',
       submitText:'Salvar lançamento',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId);
@@ -116,7 +122,7 @@ function openProductForm(id='') {
         ${field('Função','role',p.role)}
         ${field('PIN de acesso (opcional)','pin',p.pin,'password',{help:'Use apenas números ou uma senha curta que Amanda consiga lembrar.'})}
       </div>`,
-      extraFooter:existing&&STATE.profiles.length>1?`<button type="button" class="btn danger-soft" data-action="delete-profile" data-id="${eattr(p.id)}">${icon('trash',17)} Excluir perfil</button>`:'',
+      extraFooter:existing?`<button type="button" class="btn danger-soft" data-action="delete-profile" data-id="${eattr(p.id)}">${icon('trash',17)} Excluir perfil</button>`:'',
       submitText:'Salvar perfil',
       onSubmit:async form=>{
         const o=formObject(form);

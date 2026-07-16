@@ -10,6 +10,43 @@ let MODAL_SEQUENCE = 0;
 let MODAL_CLOSE_TIMER = 0;
 let MODAL_FOCUS_TIMER = 0;
 
+const MONEY_FIELD_PATTERN = /(valor|custo|preço|preco|recebido|cobrado|financeiro|saldo|pagamento|r\$)/i;
+const MONEY_NAME_PATTERN = /(^|_)(value|cost|price|amount|total|received|charged)(_|$)|^(packageCost|packageValue|receivedValue|chargedValue)$/i;
+
+function parseMoneyInputValue(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const text = String(value ?? '').trim();
+  if (!text) return 0;
+  if (/R\$|,/.test(text)) {
+    const normalized = text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.');
+    return Number(normalized) || 0;
+  }
+  return Number(text) || 0;
+}
+
+function formatMoneyInputValue(value = 0) {
+  const cents = Math.max(0, Math.round(parseMoneyInputValue(value) * 100));
+  const integer = Math.floor(cents / 100).toLocaleString('pt-BR', { minimumIntegerDigits:2 });
+  return `R$${integer},${String(cents % 100).padStart(2,'0')}`;
+}
+
+function formatMoneyInputFromDigits(value = '') {
+  const digits = String(value).replace(/\D/g,'');
+  const cents = Number(digits || 0);
+  const integer = Math.floor(cents / 100).toLocaleString('pt-BR', { minimumIntegerDigits:2 });
+  return `R$${integer},${String(cents % 100).padStart(2,'0')}`;
+}
+
+function setMoneyFieldValue(input, value) {
+  if (!input) return;
+  input.value = formatMoneyInputValue(value);
+  input.dataset.moneyValue = String(parseMoneyInputValue(value));
+}
+
+function isMoneyField(label, name, type, options = {}) {
+  return options.money === true || (type === 'number' && (MONEY_FIELD_PATTERN.test(String(label)) || MONEY_NAME_PATTERN.test(String(name))));
+}
+
 function field(label, name, value = '', type = 'text', options = {}) {
     const required = options.required ? 'required' : '';
     const min = options.min !== undefined ? `min="${options.min}"` : '';
@@ -19,6 +56,7 @@ function field(label, name, value = '', type = 'text', options = {}) {
     const cls = options.className || '';
     const readonly = options.readonly ? 'readonly' : '';
     const labelText = `${esc(label)}${options.required ? ' *' : ''}`;
+    const money = isMoneyField(label, name, type, options);
     if (type === 'date' || type === 'time') {
       return `<label class="field ios-wheel-field ${cls}">
         <span>${labelText}</span>
@@ -31,9 +69,12 @@ function field(label, name, value = '', type = 'text', options = {}) {
         ${options.help ? `<small>${esc(options.help)}</small>` : ''}
       </label>`;
     }
-    return `<label class="field ${cls}">
+    const renderedType = money ? 'text' : type;
+    const renderedValue = money ? formatMoneyInputValue(value) : value;
+    const moneyAttrs = money ? 'inputmode="numeric" autocomplete="off" data-money-input data-money-value="'+eattr(parseMoneyInputValue(value))+'"' : '';
+    return `<label class="field ${cls} ${money ? 'money-field' : ''}">
       <span>${labelText}</span>
-      <input type="${type}" name="${eattr(name)}" value="${eattr(value)}" ${required} ${min} ${max} ${step} ${placeholder} ${readonly}>
+      <input type="${renderedType}" name="${eattr(name)}" value="${eattr(renderedValue)}" ${required} ${money ? '' : `${min} ${max} ${step}`} ${placeholder} ${readonly} ${moneyAttrs}>
       ${options.help ? `<small>${esc(options.help)}</small>` : ''}
     </label>`;
   }
@@ -69,10 +110,14 @@ function field(label, name, value = '', type = 'text', options = {}) {
   }
 
   function formObject(form) {
-    return Object.fromEntries(new FormData(form).entries());
+    const object = Object.fromEntries(new FormData(form).entries());
+    form.querySelectorAll('[data-money-input][name]').forEach(input => {
+      object[input.name] = String(parseMoneyInputValue(input.value));
+    });
+    return object;
   }
 
-  function openModal({ title, content, submitText = 'Salvar', cancelText = 'Cancelar', onSubmit, wide = false, extraFooter = '' }) {
+  function openModal({ title, content, submitText = 'Salvar', cancelText = 'Cancelar', onSubmit, wide = false, extraFooter = '', deleteAction = '', deleteId = '', deleteText = 'Excluir' }) {
     const sequence = ++MODAL_SEQUENCE;
     clearTimeout(MODAL_CLOSE_TIMER);
     clearTimeout(MODAL_FOCUS_TIMER);
@@ -88,6 +133,7 @@ function field(label, name, value = '', type = 'text', options = {}) {
         <form id="app-modal-form">
           <div class="modal-body">${content}</div>
           <footer class="modal-footer">
+            ${deleteAction && deleteId ? `<button type="button" class="btn danger-soft modal-delete-action" data-action="${eattr(deleteAction)}" data-id="${eattr(deleteId)}">${icon('trash',17)} ${esc(deleteText)}</button>` : ''}
             ${extraFooter}
             <button type="button" class="btn ghost" data-action="close-modal">${esc(cancelText)}</button>
             ${onSubmit ? `<button type="submit" class="btn primary">${icon('check',18)} ${esc(submitText)}</button>` : ''}

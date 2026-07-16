@@ -21,7 +21,7 @@ let RESIZE_FRAME = 0;
     if(sessionStorage.getItem('amanda_clinica_unlocked')==='1')renderShell();else renderLogin();
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.10.4').catch(console.warn);
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.10.5').catch(console.warn);
   }
 
   document.addEventListener('pointerdown', event => {
@@ -151,6 +151,13 @@ let RESIZE_FRAME = 0;
   });
 
   document.addEventListener('input',event=>{
+    if(event.target.matches?.('[data-money-input]')){
+      const input=event.target;
+      input.value=formatMoneyInputFromDigits(input.value);
+      input.dataset.moneyValue=String(parseMoneyInputValue(input.value));
+      requestAnimationFrame(()=>{try{input.setSelectionRange(input.value.length,input.value.length);}catch(_){}});
+      return;
+    }
     if(event.target.id==='global-search-input'){
       SEARCH=event.target.value;
       clearTimeout(event.target._timer);
@@ -201,6 +208,10 @@ let RESIZE_FRAME = 0;
       }catch(error){toast(error.message,'error');}
       event.target.value='';
     }
+  });
+
+  document.addEventListener('focusin',event=>{
+    if(event.target.matches?.('[data-money-input]')) requestAnimationFrame(()=>{try{event.target.setSelectionRange(event.target.value.length,event.target.value.length);}catch(_){}});
   });
 
   document.addEventListener('keydown',event=>{

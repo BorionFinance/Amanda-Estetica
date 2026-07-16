@@ -1,4 +1,4 @@
-/* Amanda Estética v1.10.4 — camada mobile inspirada no Borion Finance
+/* Amanda Estética v1.10.5 — camada mobile inspirada no Borion Finance
    Responsividade, safe areas, bottom sheets, teclado, gestos e desempenho. */
 
 :root{
@@ -277,7 +277,7 @@ input,select,textarea{font-size:16px}
 }
 
 
-/* v1.10.4 — acesso temporário sem senha, mantendo a tela animada original */
+/* v1.10.5 — acesso temporário sem senha, mantendo a tela animada original */
 .login-profile-direct{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;text-align:left;border-radius:14px;transition:background .18s ease,transform .18s ease}
 .login-profile-direct:hover,.login-profile-direct:focus-visible{background:rgba(255,255,255,.34);outline:2px solid rgba(200,95,134,.22);outline-offset:2px}
 .login-profile-direct:active{transform:scale(.99)}

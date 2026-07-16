@@ -39,6 +39,9 @@ function openAnamnesisForm(id='',prefill={}) {
         ${textarea('Observações clínicas','notes',a.notes,{rows:4,className:'span-2'})}
         ${checkField('Cliente confirmou a veracidade das informações','confirmed',a.confirmed,'Registre somente após revisar a ficha com a cliente.')}
       </div><input type="hidden" name="id" value="${eattr(a.id||'')}">`,
+      deleteAction:existing?'delete-anamnesis':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir anamnese',
       submitText:'Salvar anamnese',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId);
@@ -81,6 +84,9 @@ function openAnamnesisForm(id='',prefill={}) {
         ${textarea('Texto do termo','text',c.text||consentText(c.clientName,c.protocolName),{rows:10,className:'span-2',required:true})}
         ${checkField('Cliente leu e aceitou o termo','accepted',c.accepted)}
       </div><input type="hidden" name="id" value="${eattr(c.id||'')}">`,
+      deleteAction:existing?'delete-consent':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir consentimento',
       submitText:'Salvar termo',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId),protocol=findProtocol(o.protocolId);
@@ -111,17 +117,17 @@ function openAnamnesisForm(id='',prefill={}) {
     const client=findClient(c.clientId,c.clientName)||{};
     const w=window.open('','_blank','width=850,height=900');
     if(!w){toast('O navegador bloqueou a janela de impressão.','warn');return;}
-    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Consentimento - ${esc(c.clientName)}</title><style>
-      body{font-family:Arial,sans-serif;color:#2f2530;max-width:760px;margin:40px auto;line-height:1.65;padding:0 30px}header{border-bottom:2px solid #c85f86;padding-bottom:18px;margin-bottom:30px}h1{font-size:24px;margin:0 0 6px}h2{font-size:18px;margin-top:32px}.muted{color:#6d6068}.box{background:#fff4f7;padding:18px;border-radius:10px;margin:18px 0}.sign{margin-top:70px;display:grid;grid-template-columns:1fr 1fr;gap:50px}.line{border-top:1px solid #333;text-align:center;padding-top:8px}@media print{body{margin:0 auto}.no-print{display:none}}</style></head><body>
-      <header><h1>${esc(clinic.clinicName||'Amanda Braz Estética Avançada')}</h1><div class="muted">${esc([clinic.phone,clinic.email,clinic.city].filter(Boolean).join(' · '))}</div></header>
+    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#c85f86"><title>Consentimento · ${esc(c.clientName)} · Amanda Estética</title><style>
+      :root{--rose:#c85f86;--rose-dark:#a9476b;--ink:#332a2f;--muted:#786a71;--line:rgba(214,186,198,.58);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 12% 12%,#ffe4ef 0,transparent 28%),radial-gradient(circle at 88% 86%,#f3d9e5 0,transparent 30%),linear-gradient(180deg,#fcf7fa,#f8eff4);padding:28px}.print-shell{max-width:860px;margin:0 auto}.app-bar{position:sticky;top:14px;z-index:3;display:flex;align-items:center;gap:12px;padding:13px 15px;margin-bottom:18px;background:rgba(255,255,255,.72);backdrop-filter:blur(20px) saturate(145%);border:1px solid rgba(255,255,255,.72);border-radius:20px;box-shadow:0 18px 45px rgba(117,73,91,.15)}.brand{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(145deg,#fff6f9,#f4d4df);border:1px solid #ecc8d5;color:var(--rose-dark);font-family:Georgia,serif;font-weight:800}.app-bar-copy{min-width:0;flex:1}.app-bar strong,.app-bar small{display:block}.app-bar small{color:var(--muted);font-size:12px;margin-top:2px}.print-btn{border:0;border-radius:14px;padding:11px 16px;background:linear-gradient(180deg,#dc6796,#c65583);color:#fff;font-weight:750;box-shadow:0 12px 28px rgba(200,95,134,.28);cursor:pointer}.document{background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.78);border-radius:26px;padding:42px;box-shadow:0 28px 70px rgba(117,73,91,.16);line-height:1.72}.document header{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid rgba(200,95,134,.30);padding-bottom:22px;margin-bottom:30px}.document h1{font-size:27px;margin:0 0 5px;letter-spacing:-.035em}.document h2{font-size:20px;margin:30px 0 12px}.muted{color:var(--muted)}.box{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;background:linear-gradient(135deg,rgba(255,244,248,.95),rgba(250,226,236,.78));padding:20px;border:1px solid rgba(234,200,214,.68);border-radius:18px;margin:20px 0}.box span{display:block}.box small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.status{display:inline-flex;padding:7px 11px;border-radius:999px;background:${c.accepted?'#e7f4ed':'#fff1df'};color:${c.accepted?'#3f765d':'#9b662c'};font-size:12px;font-weight:750}.sign{margin-top:76px;display:grid;grid-template-columns:1fr 1fr;gap:58px}.line{border-top:1px solid #4e4349;text-align:center;padding-top:10px}.document-footer{margin-top:58px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}@media(max-width:650px){body{padding:12px}.app-bar{top:8px}.app-bar-copy small{display:none}.print-btn{padding:10px 12px}.document{padding:24px 20px;border-radius:20px}.document header{display:block}.box,.sign{grid-template-columns:1fr}.sign{gap:50px}}@media print{body{background:#fff;padding:0}.no-print{display:none!important}.document{max-width:none;border:0;border-radius:0;box-shadow:none;padding:0}.print-shell{max-width:none}.box{break-inside:avoid}.sign{break-inside:avoid}}
+    </style></head><body><main class="print-shell"><div class="app-bar no-print"><div class="brand">AB</div><div class="app-bar-copy"><strong>Amanda Estética</strong><small>Documento preparado no aplicativo</small></div><button class="print-btn" onclick="window.print()">Imprimir / Salvar em PDF</button></div><article class="document">
+      <header><div><h1>${esc(clinic.clinicName||'Amanda Braz Estética Avançada')}</h1><div class="muted">${esc([clinic.phone,clinic.email,clinic.city].filter(Boolean).join(' · '))}</div></div><div class="muted">Consentimento clínico</div></header>
       <h2>Termo de consentimento</h2>
-      <div class="box"><strong>Cliente:</strong> ${esc(c.clientName)}<br><strong>CPF:</strong> ${esc(client.cpf||'Não informado')}<br><strong>Procedimento:</strong> ${esc(c.protocolName)}<br><strong>Data:</strong> ${formatDate(c.date)}</div>
+      <div class="box"><span><small>Cliente</small><strong>${esc(c.clientName)}</strong></span><span><small>CPF</small><strong>${esc(client.cpf||'Não informado')}</strong></span><span><small>Procedimento</small><strong>${esc(c.protocolName)}</strong></span><span><small>Data</small><strong>${formatDate(c.date)}</strong></span></div>
       <p>${esc(c.text).replace(/\n/g,'<br>')}</p>
-      <p><strong>Status:</strong> ${c.accepted?'Aceito pela cliente':'Pendente de aceite'}</p>
+      <p><span class="status">${c.accepted?'Aceito pela cliente':'Pendente de aceite'}</span></p>
       <div class="sign"><div class="line">${esc(c.signatureName||c.clientName)}<br><span class="muted">Cliente</span></div><div class="line">${esc(activeProfile().name)}<br><span class="muted">Profissional</span></div></div>
-      <p class="muted" style="margin-top:55px">${esc(clinic.city||'')} · ${formatDate(c.date)}</p>
-      <button class="no-print" onclick="window.print()" style="margin-top:25px;padding:12px 18px;background:#c85f86;color:white;border:0;border-radius:8px">Imprimir / Salvar em PDF</button>
-    </body></html>`);
+      <footer class="document-footer">${esc(clinic.city||'')} · ${formatDate(c.date)} · Gerado pelo Amanda Estética</footer>
+    </article></main></body></html>`);
     w.document.close();
   }
 
@@ -170,6 +176,9 @@ function openAnamnesisForm(id='',prefill={}) {
         ${textarea('Observações técnicas','notes',p.notes,{rows:3,className:'span-2'})}
         ${checkField('Autorização para uso da imagem','authorization',p.authorization)}
       </div><input type="hidden" name="id" value="${eattr(p.id||'')}">`,
+      deleteAction:existing?'delete-photo':'',
+      deleteId:existing?.id||'',
+      deleteText:'Excluir foto',
       submitText:'Salvar foto',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId),protocol=findProtocol(o.protocolId);

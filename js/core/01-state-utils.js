@@ -18,6 +18,8 @@ let STATE = null;
   let CLOCK_TIMER = null;
   let PICKER_STATE = null;
   let FAB_DRAG_STATE = null;
+  let CLOUD_SYNC_STATE = 'disconnected';
+  let CLOUD_SYNC_LABEL = 'Não sincronizado com o Google';
   const NAV_ORDER = ['dashboard','agenda','clients','protocols','packages','attendances','anamneses','consents','photos','products','finance','settings'];
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -204,21 +206,45 @@ let STATE = null;
     clearTimeout(googleSaveTimer);
     googleSaveTimer = setTimeout(async () => {
       try {
-        if (!window.GoogleDriveClinic?.isConfigured()) return;
+        if (!window.GoogleDriveClinic?.isConfigured()) { setCloudSyncStatus('disconnected'); return; }
+        setCloudSyncStatus('syncing','Sincronizando com o Google');
         await GoogleDriveClinic.save(STATE);
+        setCloudSyncStatus('synced','Sincronizado com o Google');
         updateSaveStatus('Google Drive sincronizado', 'ok');
       } catch (error) {
         console.warn('[Amanda Clínica] Autosave do Google Drive falhou:', error);
+        setCloudSyncStatus('failed','Não sincronizado com o Google');
         updateSaveStatus('Salvo local · Google pendente', 'warn');
       }
     }, 1800);
   }
 
+  function cloudSyncSnapshot() {
+    if (CLOUD_SYNC_STATE === 'disconnected' && window.GoogleDriveClinic?.isConfigured?.()) {
+      const hasLastSave = !!localStorage.getItem('amanda_clinica_last_google_save');
+      return { state:hasLastSave?'synced':'syncing', label:hasLastSave?'Sincronizado com o Google':'Google conectado; aguardando sincronização' };
+    }
+    return { state:CLOUD_SYNC_STATE, label:CLOUD_SYNC_LABEL };
+  }
+
+  function setCloudSyncStatus(state = 'disconnected', label = '') {
+    CLOUD_SYNC_STATE = ['synced','syncing','failed','disconnected'].includes(state) ? state : 'disconnected';
+    CLOUD_SYNC_LABEL = label || ({synced:'Sincronizado com o Google',syncing:'Sincronizando com o Google',failed:'Não sincronizado com o Google',disconnected:'Não sincronizado com o Google'}[CLOUD_SYNC_STATE]);
+    document.querySelectorAll('[data-cloud-sync-indicator]').forEach(el => {
+      el.className = `cloud-sync-indicator ${CLOUD_SYNC_STATE}`;
+      el.title = CLOUD_SYNC_LABEL;
+      el.setAttribute('aria-label',CLOUD_SYNC_LABEL);
+      el.dataset.cloudSyncIndicator = CLOUD_SYNC_STATE;
+    });
+    document.querySelectorAll('[data-cloud-sync-label]').forEach(el => { el.textContent = CLOUD_SYNC_LABEL; });
+  }
+
   function updateSaveStatus(text, tone = '') {
     const el = $('#save-status');
-    if (!el) return;
-    el.textContent = text;
-    el.dataset.tone = tone;
+    if (el) {
+      el.textContent = text;
+      el.dataset.tone = tone;
+    }
   }
 
   function toast(message, tone = 'ok') {

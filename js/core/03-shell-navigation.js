@@ -75,6 +75,7 @@ function renderLogin(animationClass = '') {
     applyInterfaceMode();
     document.body.classList.remove('login-page','sidebar-open');
     const profile = activeProfile();
+    const cloudSync = cloudSyncSnapshot();
     const navGroups = [
       ['Clínica', ['dashboard','agenda','clients','protocols','packages','attendances']],
       ['Prontuário', ['anamneses','consents','photos']],
@@ -91,9 +92,13 @@ function renderLogin(animationClass = '') {
       <aside id="sidebar" class="sidebar">
         <div class="sidebar-brand">
           <div class="brand-mark">AB</div>
-          <div><strong>Amanda Estética <em class="pro-badge">PRO</em></strong><small>Gestão da clínica</small></div>
+          <div><strong>Amanda Estética <span class="pro-sync-wrap"><em class="pro-badge">PRO</em><span class="cloud-sync-indicator ${cloudSync.state}" data-cloud-sync-indicator="${cloudSync.state}" title="${eattr(cloudSync.label)}" aria-label="${eattr(cloudSync.label)}"></span></span></strong><small>Gestão da clínica</small></div>
         </div>
-        <nav>${sideNav}</nav>
+        <nav>${sideNav}
+          <button class="sidebar-cloud-save" data-action="quick-cloud-save" title="Salvar os dados no Google Drive">
+            ${icon('upload',18)}<span><strong>Salvar na nuvem</strong><small data-cloud-sync-label>${esc(cloudSync.label)}</small></span>
+          </button>
+        </nav>
         <div class="sidebar-footer">
           <div class="sidebar-profile-row">
             <button class="profile-mini" data-action="profile-menu">

@@ -1,0 +1,17 @@
+/**
+ * Amanda Estética v1.10.5 — máscara monetária, status de nuvem e ações rápidas.
+ */
+.money-field input[data-money-input]{font-variant-numeric:tabular-nums;font-weight:750;letter-spacing:.015em;padding-right:15px}
+.money-field input[data-money-input]::selection{background:rgba(200,95,134,.22)}
+.pro-sync-wrap{display:inline-flex;align-items:center;gap:6px;margin-left:4px;vertical-align:middle}
+.cloud-sync-indicator{width:10px;height:10px;display:inline-block;border-radius:50%;background:#c65360;border:2px solid rgba(255,255,255,.88);box-shadow:0 0 0 1px rgba(106,65,81,.15),0 2px 8px rgba(106,65,81,.16);flex:none}
+.cloud-sync-indicator.synced{background:#42a36f;box-shadow:0 0 0 1px rgba(66,163,111,.20),0 0 10px rgba(66,163,111,.35)}
+.cloud-sync-indicator.syncing{background:#d9a33e;box-shadow:0 0 0 1px rgba(217,163,62,.20),0 0 10px rgba(217,163,62,.32);animation:cloud-sync-pulse 1.1s ease-in-out infinite}
+.cloud-sync-indicator.failed,.cloud-sync-indicator.disconnected{background:#c65360;box-shadow:0 0 0 1px rgba(198,83,96,.20),0 0 10px rgba(198,83,96,.25)}
+@keyframes cloud-sync-pulse{50%{transform:scale(.72);opacity:.55}}
+.sidebar-cloud-save{width:calc(100% - 8px);margin:0 4px 10px;display:flex;align-items:center;gap:10px;border:1px solid rgba(222,183,199,.60);background:linear-gradient(135deg,rgba(255,247,251,.86),rgba(247,220,232,.74));color:var(--rose-dark);border-radius:14px;padding:11px 12px;text-align:left;box-shadow:0 10px 24px rgba(135,86,104,.09);transition:transform .25s ease,box-shadow .25s ease,background .25s ease}
+.sidebar-cloud-save:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(135,86,104,.14);background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(247,220,232,.86))}
+.sidebar-cloud-save>span{min-width:0}.sidebar-cloud-save strong,.sidebar-cloud-save small{display:block}.sidebar-cloud-save strong{font-size:12px}.sidebar-cloud-save small{margin-top:2px;font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:156px}
+.modal-delete-action{margin-right:auto}
+@media(max-width:860px){.sidebar-cloud-save{margin-bottom:14px}.modal-footer{align-items:stretch}.modal-delete-action{order:3;width:100%;justify-content:center;margin-top:4px}.pro-sync-wrap{gap:5px}.cloud-sync-indicator{width:9px;height:9px}}
+@media(prefers-reduced-motion:reduce){.cloud-sync-indicator.syncing{animation:none}}

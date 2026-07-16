@@ -32,6 +32,9 @@ function openPackageForm(id='',prefill={}) {
       ${textarea('Resumo do resultado','resultSummary',p.resultSummary,{rows:3,className:'span-2'})}
       ${textarea('Observações','notes',p.notes,{rows:3,className:'span-2'})}
     </div><input type="hidden" name="id" value="${eattr(p.id||'')}">`,
+    deleteAction:existing?'delete-package':'',
+    deleteId:existing?.id||'',
+    deleteText:'Excluir pacote',
     submitText:'Salvar pacote',
     onSubmit:async form=>{
       const o=formObject(form),client=findClient(o.clientId),protocol=findProtocol(o.protocolId);
@@ -52,7 +55,7 @@ function openPackageForm(id='',prefill={}) {
   const form=$('#app-modal-form');
   form.elements.protocolId.addEventListener('change',()=>{
     const protocol=findProtocol(form.elements.protocolId.value);
-    if(protocol&&!existing)form.elements.packageValue.value=protocol.price||0;
+    if(protocol&&!existing)setMoneyFieldValue(form.elements.packageValue,protocol.price||0);
   });
 }
 
@@ -99,6 +102,9 @@ function openAttendanceForm(id='',prefill={}) {
       ${textarea('Observações','notes',a.notes,{rows:3,className:'span-2'})}
       <div class="stock-impact-preview span-2" id="attendance-stock-preview"></div>
     </div><input type="hidden" name="id" value="${eattr(a.id||'')}"><input type="hidden" name="appointmentId" value="${eattr(a.appointmentId||'')}">`,
+    deleteAction:existing?'delete-attendance':'',
+    deleteId:existing?.id||'',
+    deleteText:'Excluir atendimento',
     submitText:'Salvar atendimento',
     onSubmit:async form=>{
       const o=formObject(form),client=findClient(o.clientId),protocol=findProtocol(o.protocolId);
@@ -150,7 +156,7 @@ function openAttendanceForm(id='',prefill={}) {
     const client=findClient(form.elements.clientId.value),protocol=findProtocol(form.elements.protocolId.value);
     if(protocol&&!existing){
       form.elements.duration.value=protocol.duration||60;
-      if(!form.elements.packageId.value)form.elements.chargedValue.value=protocol.price||0;
+      if(!form.elements.packageId.value)setMoneyFieldValue(form.elements.chargedValue,protocol.price||0);
       if(protocol.returnDays){
         const dt=dateFromIso(form.elements.date.value);dt.setDate(dt.getDate()+num(protocol.returnDays));
         form.elements.nextReturn.value=localIsoDate(dt);
@@ -160,7 +166,7 @@ function openAttendanceForm(id='',prefill={}) {
     const current=packSel.value||'';
     packSel.innerHTML='<option value="">Selecione</option>'+optionPackages(client?.id||'',current,protocol?.id||'').map(opt=>`<option value="${eattr(opt.value)}">${esc(opt.label)}</option>`).join('');
     packSel.value=current;
-    if(packSel.value&&!existing){form.elements.chargedValue.value=0;form.elements.paymentMethod.value='Pacote';}
+    if(packSel.value&&!existing){setMoneyFieldValue(form.elements.chargedValue,0);form.elements.paymentMethod.value='Pacote';}
     refreshStockPreview();
   };
   form.elements.clientId.addEventListener('change',autofill);
@@ -171,7 +177,7 @@ function openAttendanceForm(id='',prefill={}) {
     if(pkg){
       form.elements.clientId.value=pkg.clientId;
       form.elements.protocolId.value=pkg.protocolId;
-      form.elements.chargedValue.value=0;
+      setMoneyFieldValue(form.elements.chargedValue,0);
       form.elements.paymentMethod.value='Pacote';
     }
     refreshStockPreview();
