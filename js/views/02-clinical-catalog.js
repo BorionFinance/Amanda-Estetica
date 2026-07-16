@@ -149,24 +149,18 @@ function renderProtocols() {
   }
 
   const PHOTO_PHASE_ORDER = ['Antes','Depois','Retorno','Comparativo'];
+  let PHOTO_COMPARE_MODE = false;
+  let PHOTO_COMPARE_SELECTION = [];
 
-  function photoThumb(p, sizeClass='') {
+  function photoThumb(p, sizeClass='', badge='') {
     if (!p) return `<div class="photo-frame ${sizeClass} empty-slot">${icon('image',26)}<span>Sem foto</span></div>`;
     const src = p.imageData || p.url;
-    return `<div class="photo-frame ${sizeClass}">${src ? `<img src="${eattr(src)}" alt="${eattr(p.clientName)}" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('broken')">` : `<div>${icon('image',26)}<span>Sem imagem</span></div>`}</div>`;
+    return `<div class="photo-frame ${sizeClass}">${src ? `<img src="${eattr(src)}" alt="${eattr(p.clientName)}" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('broken')">` : `<div>${icon('image',26)}<span>Sem imagem</span></div>`}${badge}</div>`;
   }
 
-  function photoSessionsFor(clientId, protocolId) {
+  function photoGalleryFor(clientId, protocolId) {
     const photos = data().photos.filter(p => p.clientId===clientId && (protocolId==='_none' ? !p.protocolId : p.protocolId===protocolId));
-    const byDate = {};
-    photos.forEach(p => { (byDate[p.date||'—'] ||= []).push(p); });
-    return Object.keys(byDate).sort((a,b)=>b.localeCompare(a)).map(date => {
-      const items = byDate[date].sort((a,b)=>PHOTO_PHASE_ORDER.indexOf(a.phase)-PHOTO_PHASE_ORDER.indexOf(b.phase));
-      const antes = items.find(p=>p.phase==='Antes');
-      const depois = items.find(p=>p.phase==='Depois');
-      const extras = items.filter(p=>p!==antes && p!==depois);
-      return { date, antes, depois, extras, all: items };
-    });
+    return photos.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||PHOTO_PHASE_ORDER.indexOf(a.phase)-PHOTO_PHASE_ORDER.indexOf(b.phase));
   }
 
   function renderPhotos() {
@@ -220,26 +214,28 @@ function renderProtocols() {
     const client = findClient(clientId);
     const protocol = protocolId!=='_none' ? findProtocol(protocolId) : null;
     const protocolName = protocol?.name || 'Sem protocolo';
-    const sessions = photoSessionsFor(clientId, protocolId);
+    const gallery = photoGalleryFor(clientId, protocolId);
+    const latestAntes = gallery.filter(p=>p.phase==='Antes').slice(-1)[0];
+    const latestDepois = gallery.filter(p=>p.phase==='Depois').slice(-1)[0];
+    if (PHOTO_COMPARE_SELECTION.length) PHOTO_COMPARE_SELECTION = PHOTO_COMPARE_SELECTION.filter(id=>gallery.some(p=>p.id===id));
     return `<section class="section-head">
       <div><button type="button" class="breadcrumb-back" data-action="photo-open-client" data-id="${eattr(clientId)}">${icon('chevron',16)} ${esc(client?.name||'Cliente')}</button>
-      <span class="eyebrow">${esc(client?.name||'')}</span><h2>${esc(protocolName)}</h2><p>Sessões agrupadas por data. Antes e depois pareados automaticamente — ajuste a fase da foto pra corrigir o par.</p></div>
-      <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
+      <span class="eyebrow">${esc(client?.name||'')}</span><h2>${esc(protocolName)}</h2><p>${gallery.length} foto${gallery.length===1?'':'s'} nesta pasta — nada é substituído, cada foto fica salva e visível aqui.</p></div>
+      <div class="photo-session-toolbar">
+        ${latestAntes && latestDepois ? `<button class="btn secondary" data-action="photo-compare-pair" data-antes="${eattr(latestAntes.id)}" data-depois="${eattr(latestDepois.id)}">${icon('columns',17)} Comparar antes/depois</button>` : ''}
+        <button class="btn secondary ${PHOTO_COMPARE_MODE?'is-active':''}" data-action="photo-toggle-compare-mode">${icon('check',17)} ${PHOTO_COMPARE_MODE?'Cancelar seleção':'Selecionar para comparar'}</button>
+        <button class="btn primary" data-action="add-photo">${icon('plus',18)} Adicionar foto</button>
+      </div>
     </section>
-    <section class="photo-session-list">
-      ${sessions.length ? sessions.map(s => `<article class="photo-session-card">
-        <header><strong>${formatDate(s.date)}</strong>${s.antes && s.depois ? chip('Par completo','success') : chip('Sem par completo','warn')}</header>
-        <div class="photo-session-pair">
-          <div class="photo-session-slot">${photoThumb(s.antes,'session-thumb')}<small>Antes</small></div>
-          <div class="photo-session-slot">${photoThumb(s.depois,'session-thumb')}<small>Depois</small></div>
-        </div>
-        <div class="photo-session-items">
-          ${s.all.map(p=>`<div class="photo-session-item">
-            <span>${esc(p.phase||'Registro')}${p.area?` · ${esc(p.area)}`:''}</span>
-            <div><button class="icon-btn small" data-action="edit-photo" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-photo" data-id="${eattr(p.id)}">${icon('trash',16)}</button></div>
-          </div>`).join('')}
-        </div>
-      </article>`).join('') : emptyState('Nenhuma foto neste protocolo','Registre a primeira sessão deste protocolo.','add-photo','Adicionar foto')}
+    ${PHOTO_COMPARE_MODE && PHOTO_COMPARE_SELECTION.length>=2 ? `<div class="photo-compare-bar">${PHOTO_COMPARE_SELECTION.length} selecionadas <button class="btn primary compact" data-action="photo-compare-selected">${icon('columns',16)} Comparar</button></div>` : ''}
+    <section class="photo-grid photo-gallery-grid">
+      ${gallery.length ? gallery.map(p => `<article class="photo-card photo-gallery-item ${PHOTO_COMPARE_SELECTION.includes(p.id)?'is-selected':''}">
+        <button type="button" class="photo-gallery-open" data-action="${PHOTO_COMPARE_MODE?'photo-toggle-select':'photo-view'}" data-id="${eattr(p.id)}">
+          ${photoThumb(p,'gallery-thumb', `<span class="phase">${esc(p.phase||'Registro')}</span>${PHOTO_COMPARE_MODE ? `<span class="photo-select-mark">${PHOTO_COMPARE_SELECTION.includes(p.id)?icon('check',15):''}</span>` : ''}`)}
+        </button>
+        <div class="photo-info"><small>${formatDate(p.date)}</small>${p.area?`<span>${esc(p.area)}</span>`:''}</div>
+        <footer><span>${p.authorization ? chip('Uso autorizado','success') : chip('Uso interno','')}</span><div><button class="icon-btn small" data-action="edit-photo" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-photo" data-id="${eattr(p.id)}">${icon('trash',16)}</button></div></footer>
+      </article>`).join('') : emptyState('Nenhuma foto neste protocolo','Registre a primeira foto deste protocolo.','add-photo','Adicionar foto')}
     </section>`;
   }
 

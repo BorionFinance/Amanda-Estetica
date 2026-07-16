@@ -216,7 +216,12 @@ let RESIZE_FRAME = 0;
 
   document.addEventListener('keydown',event=>{
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();manualSave();}
+    if(event.key==='Escape'&&$('#photo-viewer-root').children.length){closePhotoViewer();return;}
     if(event.key==='Escape'&&$('#modal-root').children.length)closeModal();
+    if($('#photo-viewer-root').children.length&&PHOTO_VIEWER_NAV){
+      if(event.key==='ArrowRight')PHOTO_VIEWER_NAV(1);
+      if(event.key==='ArrowLeft')PHOTO_VIEWER_NAV(-1);
+    }
   });
 
   window.addEventListener('hashchange',()=>{

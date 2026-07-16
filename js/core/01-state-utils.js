@@ -14,6 +14,7 @@ let STATE = null;
   let deferredInstallPrompt = null;
   let ATTENDANCE_FILTER = { mode: 'all', date: '', month: '' };
   let PHOTO_NAV = { clientId: '', protocolId: '' };
+  let PHOTO_VIEWER_NAV = null;
   let FINANCE_FILTER = { scope: 'all', month: '' };
   let VIEW_TRANSITIONING = false;
   let CLOCK_TIMER = null;
