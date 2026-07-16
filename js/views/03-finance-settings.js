@@ -100,13 +100,15 @@ function renderFinance() {
             </div>
           </section>
 
-          <section class="ios-settings-group">
+          <section class="ios-settings-group" data-no-stack>
             <h3>Marcas e categorias</h3>
             <div class="tag-manager-grid">
               ${renderTagManager('Categorias de produtos','productCategories')}
               ${renderTagManager('Marcas','productBrands','Mantidas em ordem alfabética.')}
               ${renderTagManager('Categorias financeiras','financeCategories')}
               ${renderTagManager('Centros de custo','costCenters','Em qual área da clínica a entrada ou saída se originou.')}
+              ${renderTagManager('Áreas tratadas (fotos)','photoAreas','Usadas ao registrar fotos de antes e depois.')}
+              ${renderTagManager('Tipos de pele','skinTypes','Usados na anamnese.')}
             </div>
           </section>
 

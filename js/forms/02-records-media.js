@@ -16,7 +16,7 @@ function openAnamnesisForm(id='',prefill={}) {
         ${selectField('Cliente','clientId',optionClients(a.clientId),a.clientId,{required:true})}
         ${field('Data','date',a.date,'date',{required:true})}
         ${field('Profissional','professional',a.professional)}
-        ${field('Tipo de pele','skinType',a.skinType)}
+        ${selectFieldWithAdd('Tipo de pele','skinType',data().settings.skinTypes,a.skinType,{itemLabel:'tipo de pele'})}
         ${field('Fototipo','phototype',a.phototype)}
         ${field('Sensibilidade','sensitivity',a.sensitivity)}
         ${textarea('Queixa principal','complaint',a.complaint,{required:true,rows:3,className:'span-2'})}
@@ -45,6 +45,7 @@ function openAnamnesisForm(id='',prefill={}) {
       submitText:'Salvar anamnese',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId);
+        if(o.skinType==='__new__')throw new Error('Termine de cadastrar o tipo de pele novo (ou cancele) antes de salvar.');
         const item={...a,...o,id:o.id||uid('AN'),clientId:o.clientId,clientName:client?.name||'',phone:client?.phone||'',confirmed:bool(o.confirmed),updatedAt:nowIso()};
         const idx=data().anamneses.findIndex(x=>x.id===item.id);
         idx>=0?data().anamneses.splice(idx,1,item):data().anamneses.push(item);
@@ -52,6 +53,8 @@ function openAnamnesisForm(id='',prefill={}) {
         closeModal();renderView();toast('Anamnese salva.');
       }
     });
+    const form=$('#app-modal-form');
+    wireQuickAddSelect(form,'skinType','skinTypes',{label:'tipo de pele'});
   }
 
   function viewAnamnesis(id) {
@@ -153,7 +156,7 @@ function openAnamnesisForm(id='',prefill={}) {
         ${selectField('Protocolo','protocolId',optionProtocols(p.protocolId),p.protocolId)}
         ${field('Data','date',p.date,'date',{required:true})}
         ${selectField('Fase','phase',['Antes','Depois','Retorno','Comparativo'],p.phase,{blank:false})}
-        ${field('Área tratada','area',p.area,'text',{className:'span-2'})}
+        ${selectFieldWithAdd('Área tratada','area',data().settings.photoAreas,p.area,{className:'span-2',itemLabel:'área tratada'})}
         <label class="field span-2"><span>Imagem</span><input type="file" name="imageFile" accept="image/*"><small>Salva na qualidade original do arquivo — sem compressão, sem redimensionar.</small></label>
         ${field('Link externo (opcional)','url',p.url,'url',{className:'span-2'})}
         ${textarea('Resultado percebido','result',p.result,{rows:3,className:'span-2'})}
@@ -166,6 +169,7 @@ function openAnamnesisForm(id='',prefill={}) {
       submitText:'Salvar foto',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId),protocol=findProtocol(o.protocolId);
+        if(o.area==='__new__')throw new Error('Termine de cadastrar a área tratada nova (ou cancele) antes de salvar.');
         const file=form.elements.imageFile.files[0];
         let imageData=p.imageData||'';
         if(file){updateSaveStatus('Salvando foto em qualidade original…','warn');imageData=await readImageFull(file);}
@@ -176,6 +180,8 @@ function openAnamnesisForm(id='',prefill={}) {
         closeModal();renderView();toast('Foto salva.');
       }
     });
+    const form=$('#app-modal-form');
+    wireQuickAddSelect(form,'area','photoAreas',{label:'área tratada'});
   }
 
   function photoViewerRoot() {

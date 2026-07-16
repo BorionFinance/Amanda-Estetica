@@ -207,6 +207,16 @@ let STATE = null;
       const used = d.finance.map(x => String(x.costCenter || '').trim()).filter(Boolean);
       d.settings.costCenters = [...new Set([...defaults, ...used])];
     }
+    if (!Array.isArray(d.settings.photoAreas)) {
+      const defaults = ['Rosto','Colo','Abdômen','Glúteos','Pernas','Braços','Corpo todo'];
+      const used = d.photos.map(x => String(x.area || '').trim()).filter(Boolean);
+      d.settings.photoAreas = [...new Set([...defaults, ...used])];
+    }
+    if (!Array.isArray(d.settings.skinTypes)) {
+      const defaults = ['Seca','Oleosa','Mista','Normal','Sensível','Desidratada'];
+      const used = d.anamneses.map(x => String(x.skinType || '').trim()).filter(Boolean);
+      d.settings.skinTypes = [...new Set([...defaults, ...used])];
+    }
     return d;
   }
 

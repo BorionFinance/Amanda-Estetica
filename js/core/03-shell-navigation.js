@@ -202,6 +202,7 @@ function renderLogin(animationClass = '') {
       container.classList.add('ios-scroll-stack','ios-universal-stack');
       const children = Array.from(container.children).filter(item =>
         item.matches('.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.list-row,.ios-settings-group,.ios-security-note')
+        && !item.hasAttribute('data-no-stack')
       );
       const mobileStack = window.matchMedia('(max-width: 860px)').matches || document.documentElement.classList.contains('ui-smartphone');
       const isSettings = container.matches('.ios-settings-main,.ios-settings-aside');

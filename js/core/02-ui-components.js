@@ -103,7 +103,9 @@ function field(label, name, value = '', type = 'text', options = {}) {
   }
 
   function selectFieldWithAdd(label, name, optionsList, current = '', options = {}) {
-    const list = optionsList.map(opt => {
+    const values = optionsList.map(opt => String(typeof opt === 'object' ? opt.value : opt));
+    const extra = current && !values.includes(String(current)) ? [current] : [];
+    const list = [...optionsList, ...extra].map(opt => {
       const value = typeof opt === 'object' ? opt.value : opt;
       const text = typeof opt === 'object' ? opt.label : opt;
       return `<option value="${eattr(value)}" ${String(value) === String(current) ? 'selected' : ''}>${esc(text)}</option>`;

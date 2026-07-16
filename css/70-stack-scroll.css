@@ -104,3 +104,21 @@
     box-shadow:0 16px 36px rgba(113,73,90,.11),0 -1px 0 rgba(255,255,255,.66)!important;
   }
 }
+
+/* Seções com conteúdo alto/variável (ex: grade de categorias) não participam da pilha
+   sticky — ficam no fluxo normal, com a mesma aparência de cartão, sem sobrepor nem
+   ser sobrepostas por cartões vizinhos durante o scroll. */
+.ios-settings-main>[data-no-stack],
+.ios-settings-aside>[data-no-stack]{
+  position:relative!important;
+  top:auto!important;
+  z-index:auto!important;
+  margin:0 0 18px!important;
+  padding:8px!important;
+  border-radius:28px!important;
+  background:linear-gradient(180deg,rgba(250,243,247,.965),rgba(249,239,245,.925))!important;
+  -webkit-backdrop-filter:blur(30px) saturate(140%)!important;
+  backdrop-filter:blur(30px) saturate(140%)!important;
+  box-shadow:0 18px 44px rgba(113,73,90,.10),0 -1px 0 rgba(255,255,255,.62)!important;
+}
+
