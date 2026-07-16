@@ -1,7 +1,8 @@
 /**
- * Amanda Estética v1.11.0 — pacote de melhorias de formulários:
+ * Amanda Estética v1.11.1 — pacote de melhorias de formulários:
  * produtos vinculados do protocolo, máscaras e CEP do cadastro de cliente,
- * parcelamento no atendimento, categorias/marcas rápidas de produto e financeiro.
+ * parcelamento no atendimento, categorias/marcas rápidas de produto e financeiro,
+ * subtítulo e rodapé em duas linhas nas janelas flutuantes (inspirado no Borion).
  */
 
 /* =========================================================
@@ -49,10 +50,17 @@
 /* =========================================================
    Financeiro / Produtos — categoria e marca com adição rápida
    ========================================================= */
+/* =========================================================
+   Financeiro / Produtos — categoria e marca com criação rápida
+   (opção "Criar novo(a)..." dentro do próprio select, sem popup)
+   ========================================================= */
 .field-with-add{display:flex;flex-direction:column;gap:6px}
-.field-with-add-row{display:flex;gap:6px}
-.field-with-add-row select{flex:1}
-.field-with-add-row .icon-btn{flex:none}
+.quick-add-box{display:flex;gap:8px}
+.quick-add-box.is-hidden{display:none}
+.quick-add-box input{
+  flex:1;height:38px;border:1px solid var(--rose);border-radius:9px;
+  padding:0 10px;font-size:12px;background:var(--surface-soft);color:var(--ink);outline:none;
+}
 
 /* =========================================================
    Atendimento — parcelas do cartão de crédito
@@ -73,3 +81,15 @@
 .tag-add-row{display:flex;gap:6px}
 .tag-add-row input{flex:1;height:36px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:12px;background:#fff;color:var(--ink)}
 @media(max-width:860px){.tag-manager-grid{grid-template-columns:1fr}}
+
+/* =========================================================
+   Modal — subtítulo, rodapé em duas linhas e floreio no fechar
+   (estrutura inspirada no Borion: ação principal separada das
+   ações secundárias/destrutivas, com contexto de uma linha no topo)
+   ========================================================= */
+.modal-header .icon-btn{transition:background-color .18s ease,color .18s ease,transform .18s ease}
+.modal-header .icon-btn:hover{transform:rotate(4deg) scale(1.05)}
+@media(min-width:601px){
+  .modal-footer-primary{align-items:center}
+  .modal-footer-primary .btn{min-width:120px}
+}

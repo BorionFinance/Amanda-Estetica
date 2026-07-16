@@ -103,27 +103,56 @@ function field(label, name, value = '', type = 'text', options = {}) {
   }
 
   function selectFieldWithAdd(label, name, optionsList, current = '', options = {}) {
+    const list = optionsList.map(opt => {
+      const value = typeof opt === 'object' ? opt.value : opt;
+      const text = typeof opt === 'object' ? opt.label : opt;
+      return `<option value="${eattr(value)}" ${String(value) === String(current) ? 'selected' : ''}>${esc(text)}</option>`;
+    }).join('');
     return `<div class="field-with-add ${options.className || ''}">
-      <div class="field-with-add-row">
-        ${selectField(label, name, optionsList, current, { blank: options.blank, placeholder: options.placeholder })}
-        <button type="button" class="icon-btn small" data-quick-add="${eattr(name)}" title="Cadastrar novo(a)" aria-label="Cadastrar novo(a) ${esc(label)}">${icon('plus', 17)}</button>
+      <label class="field">
+        <span>${esc(label)}${options.required ? ' *' : ''}</span>
+        <select name="${eattr(name)}" data-quick-select="${eattr(name)}" ${options.required ? 'required' : ''}>
+          ${options.blank === false ? '' : `<option value="">${esc(options.placeholder || 'Selecione')}</option>`}
+          ${list}
+          <option value="__new__">➕ Criar novo(a)...</option>
+        </select>
+      </label>
+      <div class="quick-add-box is-hidden" data-quick-add-box="${eattr(name)}">
+        <input type="text" placeholder="Nome do(a) novo(a) ${esc(options.itemLabel || label.toLowerCase())}" data-quick-add-input>
+        <button type="button" class="btn secondary compact" data-quick-add-confirm>Adicionar</button>
       </div>
       ${options.help ? `<small>${esc(options.help)}</small>` : ''}
     </div>`;
   }
 
-  async function quickAddOption(selectEl, settingsKey, { sort = true, label = 'item' } = {}) {
-    if (!selectEl) return;
-    const value = (window.prompt(`Nome do(a) novo(a) ${label}:`) || '').trim();
-    if (!value) return;
-    const list = data().settings[settingsKey] || (data().settings[settingsKey] = []);
-    const duplicate = list.find(x => normalize(x) === normalize(value));
-    if (duplicate) { selectEl.value = duplicate; toast(`"${duplicate}" já estava cadastrado(a).`); return; }
-    list.push(value);
-    if (sort) list.sort((a,b) => a.localeCompare(b,'pt-BR'));
-    await persist(`Novo(a) ${label} cadastrado(a)`, { detail: value });
-    selectEl.innerHTML = `<option value="">Selecione</option>${list.map(x => `<option value="${eattr(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('')}`;
-    toast(`${value} adicionado(a).`);
+  async function wireQuickAddSelect(form, name, settingsKey, { sort = true, label = 'item' } = {}) {
+    const select = form.elements[name];
+    const box = form.querySelector(`[data-quick-add-box="${CSS.escape(name)}"]`);
+    if (!select || !box) return;
+    const input = box.querySelector('[data-quick-add-input]');
+    const confirmBtn = box.querySelector('[data-quick-add-confirm]');
+    select.addEventListener('change', () => {
+      if (select.value === '__new__') { box.classList.remove('is-hidden'); input.focus(); }
+      else box.classList.add('is-hidden');
+    });
+    confirmBtn.addEventListener('click', async () => {
+      const value = input.value.trim();
+      if (!value) { input.focus(); return; }
+      const list = data().settings[settingsKey] || (data().settings[settingsKey] = []);
+      const duplicate = list.find(x => normalize(x) === normalize(value));
+      const finalValue = duplicate || value;
+      if (!duplicate) {
+        list.push(value);
+        if (sort) list.sort((a,b) => a.localeCompare(b,'pt-BR'));
+        await persist(`Novo(a) ${label} cadastrado(a)`, { detail: finalValue });
+      }
+      select.innerHTML = `<option value="">Selecione</option>${list.map(x => `<option value="${eattr(x)}" ${x === finalValue ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__new__">➕ Criar novo(a)...</option>`;
+      select.value = finalValue;
+      box.classList.add('is-hidden');
+      input.value = '';
+      toast(duplicate ? `"${finalValue}" já estava cadastrado(a).` : `${finalValue} adicionado(a).`);
+    });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); confirmBtn.click(); } });
   }
 
   function checkField(label, name, checked = false, help = '') {
@@ -141,26 +170,31 @@ function field(label, name, value = '', type = 'text', options = {}) {
     return object;
   }
 
-  function openModal({ title, content, submitText = 'Salvar', cancelText = 'Cancelar', onSubmit, wide = false, extraFooter = '', deleteAction = '', deleteId = '', deleteText = 'Excluir' }) {
+  function openModal({ title, sub = '', content, submitText = 'Salvar', cancelText = 'Cancelar', onSubmit, wide = false, extraFooter = '', deleteAction = '', deleteId = '', deleteText = 'Excluir' }) {
     const sequence = ++MODAL_SEQUENCE;
     clearTimeout(MODAL_CLOSE_TIMER);
     clearTimeout(MODAL_FOCUS_TIMER);
     modalSubmitHandler = onSubmit || null;
     const root = $('#modal-root');
     const template = document.createElement('template');
+    const hasSecondaryRow = (deleteAction && deleteId) || extraFooter;
     template.innerHTML = `<div class="modal-backdrop" data-modal-backdrop>
       <section class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-label="${eattr(title)}">
         <header class="modal-header">
-          <div><h2>${esc(title)}</h2></div>
+          <div><h2>${esc(title)}</h2>${sub ? `<p class="modal-sub">${esc(sub)}</p>` : ''}</div>
           <button type="button" class="icon-btn" data-action="close-modal" aria-label="Fechar">${icon('x',22)}</button>
         </header>
         <form id="app-modal-form">
           <div class="modal-body">${content}</div>
           <footer class="modal-footer">
-            ${deleteAction && deleteId ? `<button type="button" class="btn danger-soft modal-delete-action" data-action="${eattr(deleteAction)}" data-id="${eattr(deleteId)}">${icon('trash',17)} ${esc(deleteText)}</button>` : ''}
-            ${extraFooter}
-            <button type="button" class="btn ghost" data-action="close-modal">${esc(cancelText)}</button>
-            ${onSubmit ? `<button type="submit" class="btn primary">${icon('check',18)} ${esc(submitText)}</button>` : ''}
+            ${hasSecondaryRow ? `<div class="modal-footer-secondary">
+              ${deleteAction && deleteId ? `<button type="button" class="btn danger-soft modal-delete-action" data-action="${eattr(deleteAction)}" data-id="${eattr(deleteId)}">${icon('trash',17)} ${esc(deleteText)}</button>` : ''}
+              ${extraFooter}
+            </div>` : ''}
+            <div class="modal-footer-primary">
+              <button type="button" class="btn ghost" data-action="close-modal">${esc(cancelText)}</button>
+              ${onSubmit ? `<button type="submit" class="btn primary">${icon('check',18)} ${esc(submitText)}</button>` : ''}
+            </div>
           </footer>
         </form>
       </section>

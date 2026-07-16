@@ -98,6 +98,7 @@ function optionClients(current='') {
     let cepSuggestions=[];
     openModal({
       title:existing?'Editar cliente':'Nova cliente',
+      sub:'Contato, endereço e dados clínicos da cliente.',
       wide:true,
       content:`<div class="form-grid">
         ${field('Nome completo','name',c.name,'text',{required:true,className:'span-2'})}
@@ -268,6 +269,7 @@ function optionClients(current='') {
     let linkedProducts=(p.products||[]).map(x=>({...x}));
     openModal({
       title:existing?'Editar protocolo':'Novo protocolo',
+      sub:'Duração, preço e os produtos consumidos em cada sessão.',
       wide:true,
       content:`<div class="form-grid">
         ${field('Código','code',p.id||`PR${String(data().protocols.length+1).padStart(3,'0')}`,'text',{required:true})}

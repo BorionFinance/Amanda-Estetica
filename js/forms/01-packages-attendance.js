@@ -14,6 +14,7 @@ function openPackageForm(id='',prefill={}) {
   const p={startDate:todayIso(),sessionsPurchased:1,sessionsBaseline:0,status:'Não iniciado',packageValue:0,receivedValue:0,paymentMethod:'Pix',...prefill,...(existing||{}),sessionsBaseline:legacyBaseline};
   openModal({
     title:existing?'Editar pacote':'Novo pacote',
+    sub:'Sessões pré-pagas de um protocolo vinculadas a uma cliente.',
     wide:true,
     content:`<div class="form-grid">
       ${selectField('Cliente','clientId',optionClients(p.clientId),p.clientId,{required:true})}
@@ -86,6 +87,7 @@ function openAttendanceForm(id='',prefill={}) {
   const a={date:todayIso(),status:'Realizado',paid:true,paymentMethod:'Pix',chargedValue:0,duration:60,...prefill,...(existing||{})};
   openModal({
     title:existing?'Editar atendimento':'Novo atendimento',
+    sub:'Sessão realizada, pagamento e evolução da cliente.',
     wide:true,
     content:`<div class="form-grid">
       ${field('Data','date',a.date,'date',{required:true})}

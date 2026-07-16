@@ -1,4 +1,4 @@
-const CACHE='amanda-clinica-v1.11.0-forms-upgrade';
+const CACHE='amanda-clinica-v1.11.1-modal-structure';
 const APP_SHELL=[
   "./",
   "./index.html",
@@ -7,7 +7,7 @@ const APP_SHELL=[
   "./css/120-money-cloud-tabs.css?v=1.10.6",
   "./css/121-app-dialogs.css?v=1.10.6",
   "./css/130-audit-fixes.css?v=1.10.7",
-  "./css/140-forms-upgrade.css?v=1.11.0",
+  "./css/140-forms-upgrade.css?v=1.11.1",
   "./css/10-views-filters.css",
   "./css/20-theme-premium-ios.css",
   "./css/30-pro-layout.css",

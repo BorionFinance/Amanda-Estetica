@@ -10,6 +10,7 @@ function openProductForm(id='') {
     const p=existing||{id:`P${String(data().products.length+1).padStart(3,'0')}`,category:'',name:'',brand:'',unit:'ml',packageQty:0,packageCost:0,usagePerService:0,stock:0,minStock:0,notes:''};
     openModal({
       title:existing?'Editar produto':'Novo produto',
+      sub:'Estoque, custo e uso deste produto nos protocolos.',
       wide:true,
       content:`<div class="form-grid">
         ${field('Código','code',p.id,'text',{required:true})}
@@ -30,6 +31,7 @@ function openProductForm(id='') {
       submitText:'Salvar produto',
       onSubmit:async form=>{
         const o=formObject(form),qty=num(o.packageQty),cost=num(o.packageCost),usage=num(o.usagePerService);
+        if(o.category==='__new__'||o.brand==='__new__')throw new Error('Termine de cadastrar a categoria/marca nova (ou cancele) antes de salvar.');
         const unitCost=qty?cost/qty:0;
         const item={...p,id:o.code.trim(),name:o.name.trim(),category:o.category||'',brand:o.brand||'',unit:o.unit||'',packageQty:qty,packageCost:cost,unitCost,usagePerService:usage,yield:usage?qty/usage:0,costPerService:unitCost*usage,stock:num(o.stock),minStock:num(o.minStock),notes:o.notes||'',updatedAt:nowIso()};
         if(!item.id)throw new Error('Informe o código do produto.');
@@ -43,8 +45,8 @@ function openProductForm(id='') {
       }
     });
     const form=$('#app-modal-form');
-    form.querySelector('[data-quick-add="category"]')?.addEventListener('click',()=>quickAddOption(form.elements.category,'productCategories',{label:'categoria'}));
-    form.querySelector('[data-quick-add="brand"]')?.addEventListener('click',()=>quickAddOption(form.elements.brand,'productBrands',{label:'marca'}));
+    wireQuickAddSelect(form,'category','productCategories',{label:'categoria'});
+    wireQuickAddSelect(form,'brand','productBrands',{label:'marca'});
   }
 
   function openFinanceForm(id='',prefill={}) {
@@ -52,6 +54,7 @@ function openProductForm(id='') {
     const f={date:todayIso(),type:'income',status:'Pago',paymentMethod:'Pix',category:'Atendimento',...prefill,...(existing||{})};
     openModal({
       title:existing?'Editar lançamento':'Novo lançamento',
+      sub:'Entrada ou saída do caixa da clínica.',
       wide:true,
       content:`<div class="form-grid">
         ${field('Data','date',f.date,'date',{required:true})}
@@ -72,6 +75,7 @@ function openProductForm(id='') {
       submitText:'Salvar lançamento',
       onSubmit:async form=>{
         const o=formObject(form),client=findClient(o.clientId);
+        if(o.category==='__new__'||o.costCenter==='__new__')throw new Error('Termine de cadastrar a categoria/centro de custo novo (ou cancele) antes de salvar.');
         const item={...f,id:o.id||uid('FN'),date:o.date,type:o.type,category:o.category||'',description:o.description||'',clientId:o.clientId||'',clientName:client?.name||'',paymentMethod:o.paymentMethod||'',value:num(o.value),status:o.status,costCenter:o.costCenter||'',origin:o.origin||'Manual',notes:o.notes||'',updatedAt:nowIso()};
         const idx=data().finance.findIndex(x=>x.id===item.id);
         idx>=0?data().finance.splice(idx,1,item):data().finance.push(item);
@@ -80,8 +84,8 @@ function openProductForm(id='') {
       }
     });
     const form=$('#app-modal-form');
-    form.querySelector('[data-quick-add="category"]')?.addEventListener('click',()=>quickAddOption(form.elements.category,'financeCategories',{sort:false,label:'categoria financeira'}));
-    form.querySelector('[data-quick-add="costCenter"]')?.addEventListener('click',()=>quickAddOption(form.elements.costCenter,'costCenters',{label:'centro de custo'}));
+    wireQuickAddSelect(form,'category','financeCategories',{sort:false,label:'categoria financeira'});
+    wireQuickAddSelect(form,'costCenter','costCenters',{label:'centro de custo'});
   }
 
   async function decodeLocalImage(file) {
