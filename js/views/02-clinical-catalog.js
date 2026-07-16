@@ -148,18 +148,98 @@ function renderProtocols() {
     </section>`;
   }
 
+  const PHOTO_PHASE_ORDER = ['Antes','Depois','Retorno','Comparativo'];
+
+  function photoThumb(p, sizeClass='') {
+    if (!p) return `<div class="photo-frame ${sizeClass} empty-slot">${icon('image',26)}<span>Sem foto</span></div>`;
+    const src = p.imageData || p.url;
+    return `<div class="photo-frame ${sizeClass}">${src ? `<img src="${eattr(src)}" alt="${eattr(p.clientName)}" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('broken')">` : `<div>${icon('image',26)}<span>Sem imagem</span></div>`}</div>`;
+  }
+
+  function photoSessionsFor(clientId, protocolId) {
+    const photos = data().photos.filter(p => p.clientId===clientId && (protocolId==='_none' ? !p.protocolId : p.protocolId===protocolId));
+    const byDate = {};
+    photos.forEach(p => { (byDate[p.date||'—'] ||= []).push(p); });
+    return Object.keys(byDate).sort((a,b)=>b.localeCompare(a)).map(date => {
+      const items = byDate[date].sort((a,b)=>PHOTO_PHASE_ORDER.indexOf(a.phase)-PHOTO_PHASE_ORDER.indexOf(b.phase));
+      const antes = items.find(p=>p.phase==='Antes');
+      const depois = items.find(p=>p.phase==='Depois');
+      const extras = items.filter(p=>p!==antes && p!==depois);
+      return { date, antes, depois, extras, all: items };
+    });
+  }
+
   function renderPhotos() {
-    const list=data().photos.filter(p=>containsSearch(p.clientName,p.protocolName,p.phase,p.area,p.result)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    if (!PHOTO_NAV.clientId) return renderPhotoClients();
+    if (!PHOTO_NAV.protocolId) return renderPhotoProtocols(PHOTO_NAV.clientId);
+    return renderPhotoSessions(PHOTO_NAV.clientId, PHOTO_NAV.protocolId);
+  }
+
+  function renderPhotoClients() {
+    const grouped = {};
+    data().photos.forEach(p => { if(!p.clientId) return; (grouped[p.clientId] ||= { clientId:p.clientId, clientName:p.clientName, items:[] }).items.push(p); });
+    const list = Object.values(grouped).filter(g=>containsSearch(g.clientName)).sort((a,b)=>(a.clientName||'').localeCompare(b.clientName||'','pt-BR'));
     return `<section class="section-head">
-      <div><span class="eyebrow">Evolução visual</span><h2>Fotos antes e depois</h2><p>Registre imagens com fase, área tratada, autorização e resultado percebido.</p></div>
+      <div><span class="eyebrow">Evolução visual</span><h2>Fotos antes e depois</h2><p>Organizadas por cliente, protocolo e sessão.</p></div>
       <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
     </section>
-    <section class="photo-grid">
-      ${list.length ? list.map(p=>`<article class="photo-card">
-        <div class="photo-frame">${p.imageData ? `<img src="${eattr(p.imageData)}" alt="${eattr(p.clientName)}" loading="lazy" decoding="async">` : p.url ? `<img src="${eattr(p.url)}" alt="${eattr(p.clientName)}" loading="lazy" decoding="async" onerror="this.parentElement.classList.add('broken')">` : `<div>${icon('image',34)}<span>Sem imagem</span></div>`}<span class="phase">${esc(p.phase || 'Registro')}</span></div>
-        <div class="photo-info"><small>${formatDate(p.date)}</small><h3>${esc(p.clientName)}</h3><span>${esc(p.protocolName || p.area || '')}</span><p>${esc(p.result || 'Sem descrição de resultado.')}</p></div>
-        <footer><span>${p.authorization ? chip('Uso autorizado','success') : chip('Uso interno','')}</span><div><button class="icon-btn small" data-action="edit-photo" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-photo" data-id="${eattr(p.id)}">${icon('trash',16)}</button></div></footer>
-      </article>`).join('') : emptyState('Nenhuma foto registrada','Adicione uma foto de antes, depois ou comparativo.','add-photo','Adicionar foto')}
+    <section class="photo-grid photo-folder-grid">
+      ${list.length ? list.map(g=>{
+        const cover = g.items.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+        return `<button type="button" class="photo-card photo-folder" data-action="photo-open-client" data-id="${eattr(g.clientId)}">
+          ${photoThumb(cover)}
+          <div class="photo-info"><h3>${esc(g.clientName)}</h3><span>${g.items.length} foto${g.items.length===1?'':'s'}</span></div>
+        </button>`;
+      }).join('') : emptyState('Nenhuma foto registrada','Adicione uma foto de antes, depois ou comparativo.','add-photo','Adicionar foto')}
+    </section>`;
+  }
+
+  function renderPhotoProtocols(clientId) {
+    const client = findClient(clientId);
+    const photos = data().photos.filter(p=>p.clientId===clientId);
+    const grouped = {};
+    photos.forEach(p => { const key=p.protocolId||'_none'; (grouped[key] ||= { protocolId:key, protocolName:p.protocolName||'Sem protocolo', items:[] }).items.push(p); });
+    const list = Object.values(grouped).sort((a,b)=>(a.protocolName||'').localeCompare(b.protocolName||'','pt-BR'));
+    return `<section class="section-head">
+      <div><button type="button" class="breadcrumb-back" data-action="photo-back-clients">${icon('chevron',16)} ${esc(client?.name||'Cliente')}</button>
+      <span class="eyebrow">Protocolos fotografados</span><h2>${esc(client?.name||'Cliente')}</h2></div>
+      <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
+    </section>
+    <section class="photo-grid photo-folder-grid">
+      ${list.length ? list.map(g=>{
+        const cover = g.items.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+        return `<button type="button" class="photo-card photo-folder" data-action="photo-open-protocol" data-id="${eattr(g.protocolId)}">
+          ${photoThumb(cover)}
+          <div class="photo-info"><h3>${esc(g.protocolName)}</h3><span>${g.items.length} foto${g.items.length===1?'':'s'}</span></div>
+        </button>`;
+      }).join('') : emptyState('Nenhuma foto neste cliente','Registre a primeira foto desta cliente.','add-photo','Adicionar foto')}
+    </section>`;
+  }
+
+  function renderPhotoSessions(clientId, protocolId) {
+    const client = findClient(clientId);
+    const protocol = protocolId!=='_none' ? findProtocol(protocolId) : null;
+    const protocolName = protocol?.name || 'Sem protocolo';
+    const sessions = photoSessionsFor(clientId, protocolId);
+    return `<section class="section-head">
+      <div><button type="button" class="breadcrumb-back" data-action="photo-open-client" data-id="${eattr(clientId)}">${icon('chevron',16)} ${esc(client?.name||'Cliente')}</button>
+      <span class="eyebrow">${esc(client?.name||'')}</span><h2>${esc(protocolName)}</h2><p>Sessões agrupadas por data. Antes e depois pareados automaticamente — ajuste a fase da foto pra corrigir o par.</p></div>
+      <button class="btn primary" data-action="add-photo">${icon('plus',18)} Nova foto</button>
+    </section>
+    <section class="photo-session-list">
+      ${sessions.length ? sessions.map(s => `<article class="photo-session-card">
+        <header><strong>${formatDate(s.date)}</strong>${s.antes && s.depois ? chip('Par completo','success') : chip('Sem par completo','warn')}</header>
+        <div class="photo-session-pair">
+          <div class="photo-session-slot">${photoThumb(s.antes,'session-thumb')}<small>Antes</small></div>
+          <div class="photo-session-slot">${photoThumb(s.depois,'session-thumb')}<small>Depois</small></div>
+        </div>
+        <div class="photo-session-items">
+          ${s.all.map(p=>`<div class="photo-session-item">
+            <span>${esc(p.phase||'Registro')}${p.area?` · ${esc(p.area)}`:''}</span>
+            <div><button class="icon-btn small" data-action="edit-photo" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-photo" data-id="${eattr(p.id)}">${icon('trash',16)}</button></div>
+          </div>`).join('')}
+        </div>
+      </article>`).join('') : emptyState('Nenhuma foto neste protocolo','Registre a primeira sessão deste protocolo.','add-photo','Adicionar foto')}
     </section>`;
   }
 

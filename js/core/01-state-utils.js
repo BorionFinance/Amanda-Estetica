@@ -13,6 +13,7 @@ let STATE = null;
   let googleSaveTimer = null;
   let deferredInstallPrompt = null;
   let ATTENDANCE_FILTER = { mode: 'all', date: '', month: '' };
+  let PHOTO_NAV = { clientId: '', protocolId: '' };
   let FINANCE_FILTER = { scope: 'all', month: '' };
   let VIEW_TRANSITIONING = false;
   let CLOCK_TIMER = null;
