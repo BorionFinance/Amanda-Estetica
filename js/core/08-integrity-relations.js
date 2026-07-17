@@ -25,6 +25,11 @@ function findProductLocal(id, name = '') {
     || data().products.find(item => normalize(item.name) === normalize(name));
 }
 
+function findDisposableLocal(id, name = '') {
+  return data().disposables.find(item => item.id === id)
+    || data().disposables.find(item => normalize(item.name) === normalize(name));
+}
+
 function linkedProtocolProducts(protocol) {
   if (!protocol || !Array.isArray(protocol.products)) return [];
   return protocol.products.map(link => {
@@ -41,6 +46,24 @@ function linkedProtocolProducts(protocol) {
       linked: !!product
     };
   }).filter(link => link.productName);
+}
+
+function linkedProtocolDisposables(protocol) {
+  if (!protocol || !Array.isArray(protocol.disposables)) return [];
+  return protocol.disposables.map(link => {
+    const disposable = findDisposableLocal(link.disposableId, link.disposableName);
+    const qty = Math.max(0, num(link.qty));
+    const unitCost = disposable ? num(disposable.unitCost) : num(link.unitCost);
+    return {
+      disposableId: disposable?.id || link.disposableId || '',
+      disposableName: disposable?.name || link.disposableName || '',
+      unit: disposable?.unit || link.unit || '',
+      qty,
+      unitCost,
+      cost: num(link.cost) || (qty * unitCost),
+      linked: !!disposable
+    };
+  }).filter(link => link.disposableName);
 }
 
 function packageRealizedAttendances(packageId) {
@@ -111,10 +134,33 @@ function attendanceInventoryPlan(attendance) {
     }));
 }
 
+function attendanceDisposablesPlan(attendance) {
+  if (!attendance || !statusIsRealized(attendance.status)) return [];
+  const protocol = findProtocolLocal(attendance.protocolId, attendance.protocolName);
+  return linkedProtocolDisposables(protocol)
+    .filter(link => link.linked && link.qty > 0)
+    .map(link => ({
+      disposableId: link.disposableId,
+      disposableName: link.disposableName,
+      unit: link.unit,
+      qty: link.qty,
+      unitCost: link.unitCost,
+      cost: link.cost
+    }));
+}
+
+/* V1.17.0 — mesma mecânica de sempre (restaura o movimento anterior, calcula
+   o novo plano, confere se sobra saldo em ambos antes de mexer em qualquer
+   estoque) só que agora cobrindo produtos e descartáveis juntos, sem
+   descontar duas vezes pelo mesmo atendimento. */
 function applyAttendanceInventory(previous, next) {
   const restore = inventoryTotals(previous?.inventoryMovements || []);
   const planned = attendanceInventoryPlan(next);
   const deduct = inventoryTotals(planned);
+  const restoreDisposables = inventoryTotals((previous?.disposableMovements || []).map(m => ({ productId: m.disposableId, qty: m.qty })));
+  const plannedDisposables = attendanceDisposablesPlan(next);
+  const deductDisposables = inventoryTotals(plannedDisposables.map(m => ({ productId: m.disposableId, qty: m.qty })));
+
   const ids = new Set([...restore.keys(), ...deduct.keys()]);
   const projections = [];
   ids.forEach(productId => {
@@ -123,20 +169,43 @@ function applyAttendanceInventory(previous, next) {
     const projected = num(product.stock) + (restore.get(productId) || 0) - (deduct.get(productId) || 0);
     projections.push({ product, projected });
   });
+
+  const disposableIds = new Set([...restoreDisposables.keys(), ...deductDisposables.keys()]);
+  const disposableProjections = [];
+  disposableIds.forEach(disposableId => {
+    const disposable = data().disposables.find(item => item.id === disposableId);
+    if (!disposable) return;
+    const projected = num(disposable.stock) + (restoreDisposables.get(disposableId) || 0) - (deductDisposables.get(disposableId) || 0);
+    disposableProjections.push({ disposable, projected });
+  });
+
   const shortage = projections.find(item => item.projected < -0.000001);
   if (shortage) {
     throw new Error(`Estoque insuficiente de ${shortage.product.name}. Disponível: ${num(shortage.product.stock)} ${shortage.product.unit || ''}.`);
   }
+  const disposableShortage = disposableProjections.find(item => item.projected < -0.000001);
+  if (disposableShortage) {
+    throw new Error(`Estoque insuficiente de ${disposableShortage.disposable.name}. Disponível: ${num(disposableShortage.disposable.stock)} ${disposableShortage.disposable.unit || ''}.`);
+  }
+
   projections.forEach(item => { item.product.stock = Math.max(0, item.projected); });
+  disposableProjections.forEach(item => { item.disposable.stock = Math.max(0, item.projected); });
+
   next.inventoryMovements = planned;
   next.inventoryCost = planned.reduce((sum, move) => sum + num(move.cost), 0);
-  return planned;
+  next.disposableMovements = plannedDisposables;
+  next.disposableInventoryCost = plannedDisposables.reduce((sum, move) => sum + num(move.cost), 0);
+  return { planned, plannedDisposables };
 }
 
 function restoreAttendanceInventory(attendance) {
   (attendance?.inventoryMovements || []).forEach(move => {
     const product = data().products.find(item => item.id === move.productId);
     if (product) product.stock = num(product.stock) + num(move.qty);
+  });
+  (attendance?.disposableMovements || []).forEach(move => {
+    const disposable = data().disposables.find(item => item.id === move.disposableId);
+    if (disposable) disposable.stock = num(disposable.stock) + num(move.qty);
   });
 }
 
@@ -358,6 +427,30 @@ function syncProductReferences(product, previousId = '') {
   });
 }
 
+function syncDisposableReferences(disposable, previousId = '') {
+  const oldId = previousId || disposable.id;
+  data().protocols.forEach(protocol => {
+    (protocol.disposables || []).forEach(link => {
+      if (link.disposableId === oldId || (!link.disposableId && normalize(link.disposableName) === normalize(disposable.name))) {
+        link.disposableId = disposable.id;
+        link.disposableName = disposable.name;
+        link.unit = disposable.unit || '';
+        link.unitCost = num(disposable.unitCost);
+        if (num(link.qty) > 0) link.cost = num(link.qty) * num(disposable.unitCost);
+      }
+    });
+  });
+  data().attendances.forEach(att => {
+    (att.disposableMovements || []).forEach(move => {
+      if (move.disposableId === oldId) {
+        move.disposableId = disposable.id;
+        move.disposableName = disposable.name;
+        move.unit = disposable.unit || move.unit || '';
+      }
+    });
+  });
+}
+
 function collectIntegrityReport({ repair = false } = {}) {
   const d = data();
   const clientById=new Map(d.clients.map(item=>[item.id,item]));
@@ -366,6 +459,8 @@ function collectIntegrityReport({ repair = false } = {}) {
   const protocolByName=new Map(d.protocols.map(item=>[normalize(item.name),item]));
   const productById=new Map(d.products.map(item=>[item.id,item]));
   const productByName=new Map(d.products.map(item=>[normalize(item.name),item]));
+  const disposableById=new Map(d.disposables.map(item=>[item.id,item]));
+  const disposableByName=new Map(d.disposables.map(item=>[normalize(item.name),item]));
   const realizedByPackage=new Map();
   d.attendances.forEach(att=>{
     if(!att.packageId||!statusIsRealized(att.status))return;
@@ -378,6 +473,10 @@ function collectIntegrityReport({ repair = false } = {}) {
     orphanClients: 0,
     orphanProtocols: 0,
     orphanProducts: 0,
+    orphanDisposables: 0,
+    negativeDisposableStocks: 0,
+    zeroQtyDisposableLinks: 0,
+    archivedDisposableLinks: 0,
     duplicateIds: 0,
     negativeStocks: 0,
     packagesRecalculated: 0,
@@ -441,13 +540,34 @@ function collectIntegrityReport({ repair = false } = {}) {
         report.repaired += 1;
       }
     });
-    const linkedCost=protocol.products.reduce((sum,link)=>sum+num(link.cost),0);
+    protocol.disposables = Array.isArray(protocol.disposables) ? protocol.disposables : [];
+    protocol.disposables.forEach(link => {
+      const disposable = disposableById.get(link.disposableId) || disposableByName.get(normalize(link.disposableName));
+      if (!disposable) { report.orphanDisposables += 1; return; }
+      if (disposable.archived) report.archivedDisposableLinks += 1;
+      if (num(link.qty) <= 0) report.zeroQtyDisposableLinks += 1;
+      if (repair && (link.disposableId !== disposable.id || link.disposableName !== disposable.name)) {
+        link.disposableId = disposable.id;
+        link.disposableName = disposable.name;
+        link.unit = disposable.unit || '';
+        link.unitCost = num(disposable.unitCost);
+        if (num(link.qty) > 0) link.cost = num(link.qty) * num(disposable.unitCost);
+        report.repaired += 1;
+      }
+    });
+    const linkedCost=protocol.products.reduce((sum,link)=>sum+num(link.cost),0)+protocol.disposables.reduce((sum,link)=>sum+num(link.cost),0);
     if(linkedCost>num(protocol.cost)+0.0001)report.protocolCostBelowProducts+=1;
   });
   d.products.forEach(product => {
     if (num(product.stock) < 0) {
       report.negativeStocks += 1;
       if (repair) { product.stock = 0; report.repaired += 1; }
+    }
+  });
+  d.disposables.forEach(disposable => {
+    if (num(disposable.stock) < 0) {
+      report.negativeDisposableStocks += 1;
+      if (repair) { disposable.stock = 0; report.repaired += 1; }
     }
   });
   d.packages.forEach(pkg => {
@@ -485,6 +605,10 @@ function integrityReportHtml(report) {
     ['Vínculos de protocolo sem origem', report.orphanProtocols, report.orphanProtocols ? 'danger' : 'success'],
     ['Produtos de protocolo sem cadastro', report.orphanProducts, report.orphanProducts ? 'danger' : 'success'],
     ['Produtos vinculados sem quantidade', report.zeroQtyProductLinks, report.zeroQtyProductLinks ? 'warn' : 'success'],
+    ['Descartáveis de protocolo sem cadastro', report.orphanDisposables, report.orphanDisposables ? 'danger' : 'success'],
+    ['Descartáveis vinculados sem quantidade', report.zeroQtyDisposableLinks, report.zeroQtyDisposableLinks ? 'warn' : 'success'],
+    ['Protocolos ligados a descartáveis arquivados', report.archivedDisposableLinks, report.archivedDisposableLinks ? 'warn' : 'success'],
+    ['Estoques de descartáveis negativos', report.negativeDisposableStocks, report.negativeDisposableStocks ? 'danger' : 'success'],
     ['Protocolos com custo menor que insumos', report.protocolCostBelowProducts, report.protocolCostBelowProducts ? 'warn' : 'success'],
     ['Pacotes antigos sem financeiro automático', report.legacyPackagesUnmanaged, report.legacyPackagesUnmanaged ? 'warn' : 'success'],
     ['Pacotes com sessões acima do contratado', report.packageOverbooked, report.packageOverbooked ? 'danger' : 'success'],
@@ -629,6 +753,27 @@ async function deleteProductRecord(id) {
   if(!await confirmAction(`Excluir o produto ${product.name}?`))return;
   data().products=data().products.filter(x=>x.id!==id);
   await persist('Produto excluído',{detail:product.name}); closeModal(); renderView(); toast('Produto excluído.');
+}
+
+async function deleteDisposableRecord(id) {
+  const disposable=data().disposables.find(x=>x.id===id); if(!disposable)return;
+  const linkedProtocols=data().protocols.filter(p=>(p.disposables||[]).some(link=>link.disposableId===id)).length;
+  const movements=data().attendances.filter(a=>(a.disposableMovements||[]).some(move=>move.disposableId===id)).length;
+  if(linkedProtocols||movements){
+    if(!await confirmAction(`Este descartável aparece em ${linkedProtocols} protocolo(s) e ${movements} histórico(s) de atendimento. Ele será arquivado para preservar o histórico. Continuar?`))return;
+    disposable.archived=true;
+    await persist('Descartável arquivado',{detail:disposable.name}); closeModal(); renderView(); toast('Descartável arquivado; histórico preservado.'); return;
+  }
+  if(!await confirmAction(`Excluir o descartável ${disposable.name}?`))return;
+  data().disposables=data().disposables.filter(x=>x.id!==id);
+  await persist('Descartável excluído',{detail:disposable.name}); closeModal(); renderView(); toast('Descartável excluído.');
+}
+
+async function toggleDisposableArchive(id) {
+  const disposable=data().disposables.find(x=>x.id===id); if(!disposable)return;
+  disposable.archived=!disposable.archived;
+  await persist(disposable.archived?'Descartável arquivado':'Descartável reativado',{detail:disposable.name});
+  renderView();toast(disposable.archived?'Descartável arquivado.':'Descartável reativado.');
 }
 
 async function toggleProtocolArchive(id) {

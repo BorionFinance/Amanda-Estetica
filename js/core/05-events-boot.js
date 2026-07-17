@@ -165,7 +165,8 @@ let RESIZE_FRAME = 0;
       SEARCH=event.target.value;
       clearTimeout(event.target._timer);
       event.target._timer=setTimeout(()=>{
-        if(['clients','protocols','products'].includes(CURRENT_VIEW)) refreshViewModeContent(CURRENT_VIEW,getViewMode(CURRENT_VIEW,CURRENT_VIEW==='products'?'list':'cards'));
+        if(['clients','protocols'].includes(CURRENT_VIEW)) refreshViewModeContent(CURRENT_VIEW,getViewMode(CURRENT_VIEW,'cards'));
+        else if(CURRENT_VIEW==='products'){const key=productsActiveTabKey();refreshViewModeContent(key,getViewMode(key,'list'));}
         else if(CURRENT_VIEW==='attendances') refreshAttendanceContent();
         else if(CURRENT_VIEW==='finance') refreshFinanceContent();
         else renderView();

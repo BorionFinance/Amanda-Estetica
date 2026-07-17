@@ -60,7 +60,11 @@ const VIEW_META = {
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     smartphone: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
     desktop: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
-    auto: '<path d="M4 7h10a3 3 0 0 1 3 3v7"/><path d="m14 14 3 3 3-3"/><path d="M20 7H10a3 3 0 0 0-3 3v7"/><path d="m10 14-3 3-3-3"/>'
+    auto: '<path d="M4 7h10a3 3 0 0 1 3 3v7"/><path d="m14 14 3 3 3-3"/><path d="M20 7H10a3 3 0 0 0-3 3v7"/><path d="m10 14-3 3-3-3"/>',
+    layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
+    trendUp: '<path d="M3 17 10 10l4 4 7-7"/><path d="M16 7h5v5"/>',
+    trendDown: '<path d="M3 7l7 7 4-4 7 7"/><path d="M16 17h5v-5"/>',
+    trendFlat: '<path d="M5 12h14"/>'
   };
 
   const icon = (name, size = 20) =>

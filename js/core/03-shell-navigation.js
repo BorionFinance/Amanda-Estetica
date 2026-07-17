@@ -117,7 +117,7 @@ function renderLogin(animationClass = '') {
             <input id="global-search-input" type="search" placeholder="Buscar clientes, protocolos e atendimentos" value="${eattr(SEARCH)}">
           </label>
           <button class="icon-btn" data-action="manual-save" title="Salvar agora">${icon('save',21)}</button>
-          <span id="top-add-slot" class="top-add-slot">${VIEW_META[CURRENT_VIEW].add ? `<button class="top-add btn primary compact" data-action="${VIEW_META[CURRENT_VIEW].add}">${icon('plus',18)} <span>Novo</span></button>` : ''}</span>
+          <span id="top-add-slot" class="top-add-slot">${currentAddAction() ? `<button class="top-add btn primary compact" data-action="${currentAddAction()}">${icon('plus',18)} <span>Novo</span></button>` : ''}</span>
           <button class="top-profile" data-action="profile-menu" title="Abrir perfil">${profileAvatar(profile,'small')}</button>
         </header>
         <main id="page" class="page"></main>
@@ -128,7 +128,7 @@ function renderLogin(animationClass = '') {
         </nav>
       </section>
     </div>
-    <div id="fab-slot">${VIEW_META[CURRENT_VIEW].add ? `<button class="fab" data-action="${VIEW_META[CURRENT_VIEW].add}" aria-label="Adicionar" title="Arraste para reposicionar" data-draggable-fab>${icon('plus',28)}</button>` : ''}</div>`;
+    <div id="fab-slot">${currentAddAction() ? `<button class="fab" data-action="${currentAddAction()}" aria-label="Adicionar" title="Arraste para reposicionar" data-draggable-fab>${icon('plus',28)}</button>` : ''}</div>`;
     // A tela inteira já é animada quando há screen-enter-*; evitar uma segunda
     // animação simultânea na página reduz bastante o custo de composição.
     renderView();
@@ -144,9 +144,9 @@ function renderLogin(animationClass = '') {
     $$('.nav-item').forEach(btn => btn.classList.toggle('active', btn.dataset.nav === CURRENT_VIEW));
     $$('.mobile-bottom-nav [data-nav]').forEach(btn => btn.classList.toggle('active', btn.dataset.nav === CURRENT_VIEW));
     const topAdd = $('#top-add-slot');
-    if (topAdd) topAdd.innerHTML = VIEW_META[CURRENT_VIEW].add ? `<button class="top-add btn primary compact" data-action="${VIEW_META[CURRENT_VIEW].add}">${icon('plus',18)} <span>Novo</span></button>` : '';
+    if (topAdd) topAdd.innerHTML = currentAddAction() ? `<button class="top-add btn primary compact" data-action="${currentAddAction()}">${icon('plus',18)} <span>Novo</span></button>` : '';
     const fabSlot = $('#fab-slot');
-    if (fabSlot) fabSlot.innerHTML = VIEW_META[CURRENT_VIEW].add ? `<button class="fab" data-action="${VIEW_META[CURRENT_VIEW].add}" aria-label="Adicionar" title="Arraste para reposicionar" data-draggable-fab>${icon('plus',28)}</button>` : '';
+    if (fabSlot) fabSlot.innerHTML = currentAddAction() ? `<button class="fab" data-action="${currentAddAction()}" aria-label="Adicionar" title="Arraste para reposicionar" data-draggable-fab>${icon('plus',28)}</button>` : '';
     const searchInput = $('#global-search-input');
     if (searchInput && searchInput.value !== SEARCH) searchInput.value = SEARCH;
     requestAnimationFrame(applyFabPosition);

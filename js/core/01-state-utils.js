@@ -18,6 +18,8 @@ let STATE = null;
   let PHOTO_STATUS_FILTER = 'active';
   let PHOTO_VIEWER_NAV = null;
   let FINANCE_FILTER = { scope: 'all', month: '' };
+  let PRODUCTS_TAB = 'products';
+  let PRICE_HISTORY_MODAL_STATE = null;
   let VIEW_TRANSITIONING = false;
   let CLOCK_TIMER = null;
   let PICKER_STATE = null;
@@ -150,8 +152,18 @@ let STATE = null;
   const VIEW_MODE_DEFAULTS = Object.freeze({
     clients: 'cards',
     protocols: 'cards',
-    products: 'list'
+    products: 'list',
+    disposables: 'list'
   });
+
+  function productsActiveTabKey() {
+    return PRODUCTS_TAB === 'disposables' ? 'disposables' : 'products';
+  }
+
+  function currentAddAction() {
+    if (CURRENT_VIEW === 'products' && productsActiveTabKey() === 'disposables') return 'add-disposable';
+    return VIEW_META[CURRENT_VIEW]?.add || null;
+  }
 
   function normalizeSectionViewModes(settings) {
     settings ||= {};
@@ -175,13 +187,13 @@ let STATE = null;
     if (STATE.activeProfileId !== pid) STATE.activeProfileId = pid;
     if (!STATE.dataByProfile[pid]) {
       STATE.dataByProfile[pid] = {
-        clients: [], products: [], protocols: [], packages: [], appointments: [],
+        clients: [], products: [], disposables: [], protocols: [], packages: [], appointments: [],
         attendances: [], anamneses: [], consents: [], photos: [], finance: [],
         settings: { autosaveFolder: true, autosaveGoogle: true }, audit: []
       };
     }
     const d = STATE.dataByProfile[pid];
-    ['clients','products','protocols','packages','appointments','attendances','anamneses','consents','photos','finance','audit']
+    ['clients','products','disposables','protocols','packages','appointments','attendances','anamneses','consents','photos','finance','audit']
       .forEach(key => { if (!Array.isArray(d[key])) d[key] = []; });
     d.settings ||= { autosaveFolder: true, autosaveGoogle: true };
     normalizeSectionViewModes(d.settings);
@@ -217,7 +229,41 @@ let STATE = null;
       const used = d.anamneses.map(x => String(x.skinType || '').trim()).filter(Boolean);
       d.settings.skinTypes = [...new Set([...defaults, ...used])];
     }
+    if (!Array.isArray(d.settings.disposableCategories)) {
+      const defaults = ['Luvas','Agulhas','Gaze','Algodão','Máscaras','Toucas','Seringas','Espátulas','Proteção','Aplicação','Higienização','Outros'];
+      const used = d.disposables.map(x => String(x.category || '').trim()).filter(Boolean);
+      d.settings.disposableCategories = [...new Set([...defaults, ...used])].sort((a,b) => a.localeCompare(b,'pt-BR'));
+    }
+    if (!Array.isArray(d.settings.disposableUnits)) {
+      d.settings.disposableUnits = ['Unidade','Par','Caixa','Pacote','Rolo','Folha','Grama','Mililitro','Centímetro','Metro','Outros'];
+    }
+    seedLegacyPriceHistory(d);
     return d;
+  }
+
+  /* V1.17.0 — cria retroativamente a primeira entrada do histórico de preços
+     para produtos e descartáveis cadastrados antes desta atualização, sem
+     apagar nada e sem duplicar a cada carregamento (controlado por uma flag
+     em settings). Compatível com perfis e backups antigos. */
+  function seedLegacyPriceHistory(d) {
+    if (d.settings.priceHistorySeeded) return;
+    const seedOne = item => {
+      if (!Array.isArray(item.priceHistory)) item.priceHistory = [];
+      if (item.priceHistory.length) return;
+      item.priceHistory.push({
+        id: uid('PH'),
+        date: item.createdAt || item.updatedAt || nowIso(),
+        totalValue: num(item.packageCost),
+        packageQuantity: num(item.packageQty),
+        unit: item.unit || '',
+        unitCost: num(item.unitCost),
+        supplier: item.supplier || '',
+        source: 'migrated-registration'
+      });
+    };
+    d.products.forEach(seedOne);
+    d.disposables.forEach(seedOne);
+    d.settings.priceHistorySeeded = true;
   }
 
   function addAudit(action, detail = '') {

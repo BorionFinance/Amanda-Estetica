@@ -106,7 +106,7 @@ function updateContentSection(current, incoming) {
 function refreshViewModeContent(view, mode) {
   const page = $('#page');
   if (!page) return;
-  const renderers = { clients:renderClients, protocols:renderProtocols, products:renderProducts };
+  const renderers = { clients:renderClients, protocols:renderProtocols, products:renderProducts, disposables:renderProducts };
   const renderer = renderers[view];
   if (!renderer) return;
   updateLiquidControl(page.querySelector(`.view-switcher-expandable[data-view-section="${view}"]`), mode);

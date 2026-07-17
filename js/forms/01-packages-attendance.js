@@ -75,7 +75,7 @@ function viewPackage(id) {
         ${statCard('Recebido',currency(pkg.receivedValue),'','wallet')}
         ${statCard('A receber',currency(balance),'','clock',balance?'warn':'')}
       </div>
-      <section><h4>Sessões registradas</h4>${sessions.length?`<div class="list-panel">${sessions.map(att=>`<div class="list-row"><div class="date-badge"><strong>${formatDate(att.date).slice(0,5)}</strong></div><div class="row-main"><strong>${esc(att.protocolName)}</strong><span>${esc(att.evolution||att.notes||'Sem observações')}</span><small>${(att.inventoryMovements||[]).length} produto(s) movimentado(s)</small></div><div>${chip(att.status,statusTone(att.status))}</div></div>`).join('')}</div>`:'<p class="muted">Nenhuma sessão registrada no aplicativo.</p>'}</section>
+      <section><h4>Sessões registradas</h4>${sessions.length?`<div class="list-panel">${sessions.map(att=>`<div class="list-row"><div class="date-badge"><strong>${formatDate(att.date).slice(0,5)}</strong></div><div class="row-main"><strong>${esc(att.protocolName)}</strong><span>${esc(att.evolution||att.notes||'Sem observações')}</span><small>${(att.inventoryMovements||[]).length+(att.disposableMovements||[]).length} item(ns) de estoque movimentado(s)</small></div><div>${chip(att.status,statusTone(att.status))}</div></div>`).join('')}</div>`:'<p class="muted">Nenhuma sessão registrada no aplicativo.</p>'}</section>
       <section><h4>Resultado e evolução</h4><p>${esc(pkg.evolution||pkg.resultSummary||pkg.notes||'Sem observações.')}</p></section>
     </div>`,
     extraFooter:`<button type="button" class="btn danger-soft" data-action="delete-package" data-id="${eattr(pkg.id)}">${icon('trash',17)} Excluir pacote</button>${!['Concluído','Cancelado'].includes(pkg.status)?`<button type="button" class="btn secondary" data-action="package-session" data-id="${eattr(pkg.id)}">${icon('plus',17)} Registrar sessão</button>`:''}<button type="button" class="btn secondary" data-action="edit-package" data-id="${eattr(pkg.id)}">${icon('edit',17)} Editar</button>`
@@ -115,6 +115,8 @@ function openAttendanceForm(id='',prefill={}) {
       if(statusIsRealized(o.status)){
         const archivedProducts=(protocol?.products||[]).map(link=>findProductLocal(link.productId,link.productName)).filter(product=>product?.archived);
         if(archivedProducts.length)throw new Error(`Este protocolo usa produto(s) arquivado(s): ${archivedProducts.map(product=>product.name).join(', ')}. Atualize o protocolo ou reative o estoque antes de registrar a sessão.`);
+        const archivedDisposables=(protocol?.disposables||[]).map(link=>findDisposableLocal(link.disposableId,link.disposableName)).filter(disposable=>disposable?.archived);
+        if(archivedDisposables.length)throw new Error(`Este protocolo usa descartável(is) arquivado(s): ${archivedDisposables.map(disposable=>disposable.name).join(', ')}. Atualize o protocolo ou reative o estoque antes de registrar a sessão.`);
       }
       if(o.packageId&&!linkedPackage)throw new Error('O pacote selecionado não existe mais.');
       if(linkedPackage&&(linkedPackage.clientId!==o.clientId||linkedPackage.protocolId!==o.protocolId))throw new Error('O pacote selecionado não pertence à cliente e ao protocolo escolhidos.');
@@ -131,7 +133,7 @@ function openAttendanceForm(id='',prefill={}) {
       const charged=num(o.chargedValue),baseCost=num(protocol?.cost);
       const item={...a,id:o.id||uid('AT'),date:o.date,clientId:o.clientId,clientName:client?.name||'',phone:client?.phone||'',protocolId:o.protocolId,protocolName:protocol?.name||'',packageId:o.packageId||'',duration:num(o.duration)||num(protocol?.duration),cost:baseCost,suggestedPrice:num(protocol?.price),chargedValue:charged,paymentMethod:o.paymentMethod||'',installments:o.paymentMethod==='Cartão de Crédito parcelado'?Math.max(1,num(o.installments)):1,paid:bool(o.paid),nextReturn:next,status:o.status,evolution:o.evolution||'',notes:o.notes||'',appointmentId:o.appointmentId||'',updatedAt:nowIso()};
       applyAttendanceInventory(existing,item);
-      item.cost=Math.max(baseCost,num(item.inventoryCost));
+      item.cost=Math.max(baseCost,num(item.inventoryCost)+num(item.disposableInventoryCost));
       item.profit=charged-item.cost;
       const idx=data().attendances.findIndex(x=>x.id===item.id);
       idx>=0?data().attendances.splice(idx,1,item):data().attendances.push(item);
@@ -150,10 +152,14 @@ function openAttendanceForm(id='',prefill={}) {
   const refreshStockPreview=()=>{
     const protocol=findProtocol(form.elements.protocolId.value);
     const links=linkedProtocolProducts(protocol).filter(link=>link.qty>0);
+    const disposableLinks=linkedProtocolDisposables(protocol).filter(link=>link.qty>0);
     const preview=form.querySelector('#attendance-stock-preview');
     if(!preview)return;
     const previousTotals=inventoryTotals(existing?.inventoryMovements||[]);
-    preview.innerHTML=links.length?`<strong>Movimentação automática de estoque</strong><div>${links.map(link=>{const product=findProductLocal(link.productId,link.productName);const available=product?num(product.stock)+(previousTotals.get(link.productId)||0):0;const projected=available-num(link.qty);const enough=!!product&&projected>=-0.000001;return `<span class="${enough?'':'danger'}">${esc(link.productName)}: −${num(link.qty)} ${esc(link.unit||'')} · saldo previsto ${product?Math.max(0,projected):'sem vínculo'}</span>`;}).join('')}</div>`:'<strong>Estoque</strong><span>Este protocolo não possui produtos com quantidade vinculada.</span>';
+    const previousDisposableTotals=inventoryTotals((existing?.disposableMovements||[]).map(m=>({productId:m.disposableId,qty:m.qty})));
+    const productSpans=links.map(link=>{const product=findProductLocal(link.productId,link.productName);const available=product?num(product.stock)+(previousTotals.get(link.productId)||0):0;const projected=available-num(link.qty);const enough=!!product&&projected>=-0.000001;return `<span class="${enough?'':'danger'}">${esc(link.productName)}: −${num(link.qty)} ${esc(link.unit||'')} · saldo previsto ${product?Math.max(0,projected):'sem vínculo'}</span>`;}).join('');
+    const disposableSpans=disposableLinks.map(link=>{const disposable=findDisposableLocal(link.disposableId,link.disposableName);const available=disposable?num(disposable.stock)+(previousDisposableTotals.get(link.disposableId)||0):0;const projected=available-num(link.qty);const enough=!!disposable&&projected>=-0.000001;return `<span class="${enough?'':'danger'}">${esc(link.disposableName)}: −${num(link.qty)} ${esc(link.unit||'')} · saldo previsto ${disposable?Math.max(0,projected):'sem vínculo'}</span>`;}).join('');
+    preview.innerHTML=(links.length||disposableLinks.length)?`<strong>Movimentação automática de estoque</strong><div>${productSpans}${disposableSpans}</div>`:'<strong>Estoque</strong><span>Este protocolo não possui produtos ou descartáveis com quantidade vinculada.</span>';
   };
   const autofill=()=>{
     const client=findClient(form.elements.clientId.value),protocol=findProtocol(form.elements.protocolId.value);

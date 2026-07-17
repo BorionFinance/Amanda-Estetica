@@ -7,7 +7,7 @@
 
 function openProductForm(id='') {
     const existing=data().products.find(p=>p.id===id);
-    const p=existing||{id:`P${String(data().products.length+1).padStart(3,'0')}`,category:'',name:'',brand:'',unit:'ml',packageQty:0,packageCost:0,usagePerService:0,stock:0,minStock:0,notes:''};
+    const p=existing||{id:`P${String(data().products.length+1).padStart(3,'0')}`,category:'',name:'',brand:'',unit:'ml',packageQty:0,packageCost:0,usagePerService:0,stock:0,minStock:0,notes:'',priceHistory:[]};
     openModal({
       title:existing?'Editar produto':'Novo produto',
       sub:'Estoque, custo e uso deste produto nos protocolos.',
@@ -23,6 +23,7 @@ function openProductForm(id='') {
         ${field('Uso médio por atendimento','usagePerService',p.usagePerService,'number',{min:0,step:'0.01'})}
         ${field('Estoque atual','stock',p.stock,'number',{min:0,step:'0.01'})}
         ${field('Estoque mínimo','minStock',p.minStock,'number',{min:0,step:'0.01'})}
+        ${field('Data da compra/atualização','priceDate',p.priceDate||todayIso(),'date',{help:'Usada para organizar o histórico de preços deste produto.'})}
         ${textarea('Observações','notes',p.notes,{rows:3,className:'span-2'})}
       </div><input type="hidden" name="originalId" value="${eattr(p.id||'')}">`,
       deleteAction:existing?'delete-product':'',
@@ -33,10 +34,11 @@ function openProductForm(id='') {
         const o=formObject(form),qty=num(o.packageQty),cost=num(o.packageCost),usage=num(o.usagePerService);
         if(o.category==='__new__'||o.brand==='__new__')throw new Error('Termine de cadastrar a categoria/marca nova (ou cancele) antes de salvar.');
         const unitCost=qty?cost/qty:0;
-        const item={...p,id:o.code.trim(),name:o.name.trim(),category:o.category||'',brand:o.brand||'',unit:o.unit||'',packageQty:qty,packageCost:cost,unitCost,usagePerService:usage,yield:usage?qty/usage:0,costPerService:unitCost*usage,stock:num(o.stock),minStock:num(o.minStock),notes:o.notes||'',updatedAt:nowIso()};
+        const item={...p,id:o.code.trim(),name:o.name.trim(),category:o.category||'',brand:o.brand||'',unit:o.unit||'',packageQty:qty,packageCost:cost,unitCost,usagePerService:usage,yield:usage?qty/usage:0,costPerService:unitCost*usage,stock:num(o.stock),minStock:num(o.minStock),priceDate:o.priceDate||todayIso(),notes:o.notes||'',createdAt:p.createdAt||nowIso(),updatedAt:nowIso()};
         if(!item.id)throw new Error('Informe o código do produto.');
         const duplicate=data().products.find(x=>x.id===item.id&&x.id!==o.originalId);
         if(duplicate)throw new Error('Já existe outro produto com esse código.');
+        applyPriceHistoryEntry(item,!!existing,o);
         const idx=data().products.findIndex(x=>x.id===o.originalId);
         idx>=0?data().products.splice(idx,1,item):data().products.push(item);
         syncProductReferences(item,o.originalId||item.id);
@@ -145,7 +147,7 @@ function openProductForm(id='') {
           const id=uid('profile');
           const clinic={clinicName:o.name||'Nova clínica'};
           STATE.profiles.push({id,name:o.name,role:o.role,pin:o.pin,avatarData,color:'#c85f86',clinic,createdAt:nowIso()});
-          STATE.dataByProfile[id]={clients:[],products:[],protocols:[],packages:[],appointments:[],attendances:[],anamneses:[],consents:[],photos:[],finance:[],settings:{autosaveFolder:true,autosaveGoogle:true,viewModesBySection:{clients:'cards',protocols:'cards',products:'list'},viewModes:{clients:'cards',protocols:'cards',products:'list'}},audit:[]};
+          STATE.dataByProfile[id]={clients:[],products:[],disposables:[],protocols:[],packages:[],appointments:[],attendances:[],anamneses:[],consents:[],photos:[],finance:[],settings:{autosaveFolder:true,autosaveGoogle:true,viewModesBySection:{clients:'cards',protocols:'cards',products:'list',disposables:'list'},viewModes:{clients:'cards',protocols:'cards',products:'list',disposables:'list'}},audit:[]};
           STATE.activeProfileId=id;
         }
         await persist(existing?'Perfil editado':'Perfil criado',{folder:false});

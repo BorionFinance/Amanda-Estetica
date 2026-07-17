@@ -19,6 +19,9 @@ function optionClients(current='') {
   function optionProducts() {
     return data().products.filter(x=>!x.archived).slice().sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(x=>({value:x.id,label:`${x.name}${x.unit?` (${x.unit})`:''}`}));
   }
+  function optionDisposables() {
+    return data().disposables.filter(x=>!x.archived).slice().sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(x=>({value:x.id,label:`${x.name}${x.unit?` (${x.unit})`:''}`}));
+  }
   const UF_OPTIONS=['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
   const BLOOD_TYPE_OPTIONS=['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 
@@ -265,8 +268,9 @@ function optionClients(current='') {
 
   function openProtocolForm(id='') {
     const existing=findProtocol(id);
-    const p=existing||{id:'',name:'',duration:60,cost:0,extraCostPct:0,price:0,returnDays:30,birthdayGift:'',preparation:'',notes:'',products:[]};
+    const p=existing||{id:'',name:'',duration:60,cost:0,extraCostPct:0,price:0,returnDays:30,birthdayGift:'',preparation:'',notes:'',products:[],disposables:[]};
     let linkedProducts=(p.products||[]).map(x=>({...x}));
+    let linkedDisposables=(p.disposables||[]).map(x=>({...x}));
     openModal({
       title:existing?'Editar protocolo':'Novo protocolo',
       sub:'Duração, preço e os produtos consumidos em cada sessão.',
@@ -295,8 +299,26 @@ function optionClients(current='') {
           <small>A quantidade será descontada do estoque quando o atendimento for realizado.</small>
         </div>
         <p class="muted linked-products-subtotal" data-linked-cost-subtotal>Custo dos insumos vinculados: R$ 0,00</p>
-        ${field('Extra para descartáveis (%)','extraCostPct',p.extraCostPct||0,'number',{min:0,max:100,step:'0.1',help:'Somado ao custo dos insumos para cobrir luvas, algodão e outros descartáveis.'})}
-        ${field('Custo previsto (calculado)','cost',p.cost,'number',{readonly:true,help:'Insumos + percentual de descartáveis, calculado automaticamente.'})}
+        <div class="field span-2 linked-products-field linked-disposables-field">
+          <span>Descartáveis utilizados</span>
+          <div class="linked-products-list" data-linked-disposables-list></div>
+          <div class="linked-products-picker is-hidden" data-linked-disposables-picker>
+            <select data-picker-disposable><option value="">Selecione um descartável</option>${optionDisposables().map(opt=>`<option value="${eattr(opt.value)}">${esc(opt.label)}</option>`).join('')}</select>
+            <input type="number" min="0" step="0.01" placeholder="Qtd. usada" data-picker-disposable-qty>
+            <input type="number" min="0" step="0.01" placeholder="Custo (R$)" data-picker-disposable-cost>
+            <div class="linked-products-picker-actions">
+              <button type="button" class="btn ghost compact" data-picker-disposable-cancel>Cancelar</button>
+              <button type="button" class="btn primary compact" data-picker-disposable-confirm>Adicionar</button>
+            </div>
+          </div>
+          <button type="button" class="btn secondary compact" data-picker-disposable-open>${icon('plus',16)} Adicionar descartável</button>
+          <input type="hidden" name="disposablesJson" data-disposables-json>
+          <small>Descontado do estoque de descartáveis a cada atendimento realizado deste protocolo (quantidade por sessão).</small>
+        </div>
+        <p class="muted linked-products-subtotal" data-linked-disposable-cost-subtotal>Custo dos descartáveis vinculados: R$ 0,00</p>
+        ${field('Outros custos (%)','extraCostPct',p.extraCostPct||0,'number',{min:0,max:100,step:'0.1',help:'Percentual aplicado sobre o custo dos produtos, para cobrir despesas gerais não detalhadas acima.'})}
+        <div class="field span-2 protocol-cost-breakdown" data-cost-breakdown>${costBreakdownHtml(num(p.productCost),num(p.disposableCost),num(p.productCost)*num(p.extraCostPct||0)/100,num(p.cost))}</div>
+        ${field('Custo previsto (calculado)','cost',p.cost,'number',{readonly:true,help:'Produtos + descartáveis + outros custos, calculado automaticamente.'})}
         ${textarea('Preparos / orientações','preparation',p.preparation,{rows:3,className:'span-2'})}
         ${textarea('Observações','notes',p.notes,{rows:3,className:'span-2'})}
       </div><input type="hidden" name="originalId" value="${eattr(p.id||'')}">`,
@@ -318,9 +340,22 @@ function optionClients(current='') {
           return {productId:product.id,productName:product.name,unit:product.unit||'',qty,unitCost,cost:num(x.cost)||(qty*unitCost)};
         });
         const productCost=products.reduce((sum,x)=>sum+num(x.cost),0);
+        let rawDisposables=[];
+        try{ rawDisposables=JSON.parse(o.disposablesJson||'[]'); }catch(_){ rawDisposables=[]; }
+        const disposables=rawDisposables.map(x=>{
+          const disposable=findDisposableLocal(x.disposableId,x.disposableName);
+          if(!disposable)throw new Error(`O descartável “${x.disposableName||x.disposableId}” não está mais cadastrado. Remova-o e adicione novamente.`);
+          if(disposable.archived)throw new Error(`O descartável “${disposable.name}” está arquivado. Reative-o antes de vincular ao protocolo.`);
+          const qty=Math.max(0,num(x.qty));
+          if(qty<=0)throw new Error(`Informe uma quantidade maior que zero para ${disposable.name}.`);
+          const unitCost=num(disposable.unitCost);
+          return {disposableId:disposable.id,disposableName:disposable.name,unit:disposable.unit||'',qty,unitCost,cost:num(x.cost)||(qty*unitCost)};
+        });
+        const disposableCost=disposables.reduce((sum,x)=>sum+num(x.cost),0);
         const extraCostPct=Math.max(0,num(o.extraCostPct));
-        const effectiveCost=productCost*(1+extraCostPct/100);
-        const item={...p,id:o.code.trim(),name:o.name.trim(),duration:num(o.duration),cost:effectiveCost,extraCostPct,price:num(o.price),profit:num(o.price)-effectiveCost,returnDays:num(o.returnDays),birthdayGift:o.birthdayGift||'',preparation:o.preparation||'',notes:o.notes||'',products,productCost,updatedAt:nowIso()};
+        const otherCost=productCost*(extraCostPct/100);
+        const effectiveCost=productCost+disposableCost+otherCost;
+        const item={...p,id:o.code.trim(),name:o.name.trim(),duration:num(o.duration),cost:effectiveCost,extraCostPct,price:num(o.price),profit:num(o.price)-effectiveCost,returnDays:num(o.returnDays),birthdayGift:o.birthdayGift||'',preparation:o.preparation||'',notes:o.notes||'',products,productCost,disposables,disposableCost,updatedAt:nowIso()};
         if(!item.id)throw new Error('Informe o código do protocolo.');
         const duplicate=data().protocols.find(x=>x.id===item.id&&x.id!==o.originalId);
         if(duplicate)throw new Error('Já existe outro protocolo com esse código.');
@@ -335,6 +370,10 @@ function optionClients(current='') {
     const listEl=form.querySelector('[data-linked-products-list]');
     const jsonEl=form.querySelector('[data-products-json]');
     const subtotalEl=form.querySelector('[data-linked-cost-subtotal]');
+    const disposableListEl=form.querySelector('[data-linked-disposables-list]');
+    const disposableJsonEl=form.querySelector('[data-disposables-json]');
+    const disposableSubtotalEl=form.querySelector('[data-linked-disposable-cost-subtotal]');
+    const breakdownEl=form.querySelector('[data-cost-breakdown]');
     const costInput=form.elements.cost;
     const pctInput=form.elements.extraCostPct;
     const pickerBtn=form.querySelector('[data-picker-open]');
@@ -343,12 +382,22 @@ function optionClients(current='') {
     const pickerQty=picker.querySelector('[data-picker-qty]');
     const pickerCost=picker.querySelector('[data-picker-cost]');
     let pickerCostTouched=false;
+    const disposablePickerBtn=form.querySelector('[data-picker-disposable-open]');
+    const disposablePicker=form.querySelector('[data-linked-disposables-picker]');
+    const pickerDisposable=disposablePicker.querySelector('[data-picker-disposable]');
+    const pickerDisposableQty=disposablePicker.querySelector('[data-picker-disposable-qty]');
+    const pickerDisposableCost=disposablePicker.querySelector('[data-picker-disposable-cost]');
+    let disposablePickerCostTouched=false;
 
     function updateCostPreview(){
       const subtotal=linkedProducts.reduce((sum,x)=>sum+num(x.cost),0);
+      const disposableSubtotal=linkedDisposables.reduce((sum,x)=>sum+num(x.cost),0);
       const pct=Math.max(0,num(pctInput.value));
-      const total=subtotal*(1+pct/100);
+      const otherCost=subtotal*(pct/100);
+      const total=subtotal+disposableSubtotal+otherCost;
       subtotalEl.textContent=`Custo dos insumos vinculados: ${currency(subtotal)}`;
+      disposableSubtotalEl.textContent=`Custo dos descartáveis vinculados: ${currency(disposableSubtotal)}`;
+      if(breakdownEl)breakdownEl.innerHTML=costBreakdownHtml(subtotal,disposableSubtotal,otherCost,total);
       setMoneyFieldValue(costInput,total);
     }
     function renderLinkedProducts(){
@@ -361,6 +410,16 @@ function optionClients(current='') {
       jsonEl.value=JSON.stringify(linkedProducts);
       updateCostPreview();
     }
+    function renderLinkedDisposables(){
+      disposableListEl.innerHTML=linkedDisposables.length
+        ? linkedDisposables.map((x,i)=>`<div class="linked-product-row" data-index="${i}">
+            <span>${esc(x.disposableName)} — ${currency(x.cost)}</span>
+            <button type="button" class="icon-btn tiny danger" data-remove-disposable-index="${i}" aria-label="Remover ${esc(x.disposableName)}">${icon('trash',14)}</button>
+          </div>`).join('')
+        : '<p class="muted linked-products-empty">Nenhum descartável vinculado ainda.</p>';
+      disposableJsonEl.value=JSON.stringify(linkedDisposables);
+      updateCostPreview();
+    }
     function resetPicker(){
       pickerProduct.value='';pickerQty.value='';pickerCost.value='';pickerCostTouched=false;
       picker.classList.add('is-hidden');pickerBtn.classList.remove('is-hidden');
@@ -370,6 +429,16 @@ function optionClients(current='') {
       const product=data().products.find(x=>x.id===pickerProduct.value);
       const qty=num(pickerQty.value);
       pickerCost.value=product&&qty?(qty*num(product.unitCost)).toFixed(2):'';
+    }
+    function resetDisposablePicker(){
+      pickerDisposable.value='';pickerDisposableQty.value='';pickerDisposableCost.value='';disposablePickerCostTouched=false;
+      disposablePicker.classList.add('is-hidden');disposablePickerBtn.classList.remove('is-hidden');
+    }
+    function recomputeDisposablePickerCost(){
+      if(disposablePickerCostTouched)return;
+      const disposable=data().disposables.find(x=>x.id===pickerDisposable.value);
+      const qty=num(pickerDisposableQty.value);
+      pickerDisposableCost.value=disposable&&qty?(qty*num(disposable.unitCost)).toFixed(2):'';
     }
     pickerBtn.addEventListener('click',()=>{picker.classList.remove('is-hidden');pickerBtn.classList.add('is-hidden');pickerProduct.focus();});
     picker.querySelector('[data-picker-cancel]').addEventListener('click',resetPicker);
@@ -393,8 +462,31 @@ function optionClients(current='') {
       linkedProducts.splice(num(btn.dataset.removeIndex),1);
       renderLinkedProducts();
     });
+    disposablePickerBtn.addEventListener('click',()=>{disposablePicker.classList.remove('is-hidden');disposablePickerBtn.classList.add('is-hidden');pickerDisposable.focus();});
+    disposablePicker.querySelector('[data-picker-disposable-cancel]').addEventListener('click',resetDisposablePicker);
+    pickerDisposable.addEventListener('change',()=>{disposablePickerCostTouched=false;recomputeDisposablePickerCost();});
+    pickerDisposableQty.addEventListener('input',recomputeDisposablePickerCost);
+    pickerDisposableCost.addEventListener('input',()=>{disposablePickerCostTouched=true;});
+    disposablePicker.querySelector('[data-picker-disposable-confirm]').addEventListener('click',()=>{
+      const disposable=data().disposables.find(x=>x.id===pickerDisposable.value);
+      if(!disposable){toast('Selecione um descartável.','error');return;}
+      const qty=num(pickerDisposableQty.value);
+      if(qty<=0){toast('Informe uma quantidade maior que zero.','error');return;}
+      const unitCost=num(disposable.unitCost);
+      const cost=num(pickerDisposableCost.value)||(qty*unitCost);
+      linkedDisposables.push({disposableId:disposable.id,disposableName:disposable.name,unit:disposable.unit||'',qty,unitCost,cost});
+      resetDisposablePicker();
+      renderLinkedDisposables();
+    });
+    disposableListEl.addEventListener('click',e=>{
+      const btn=e.target.closest('[data-remove-disposable-index]');
+      if(!btn)return;
+      linkedDisposables.splice(num(btn.dataset.removeDisposableIndex),1);
+      renderLinkedDisposables();
+    });
     pctInput.addEventListener('input',updateCostPreview);
     renderLinkedProducts();
+    renderLinkedDisposables();
   }
 
   function viewProtocol(id) {
@@ -402,6 +494,7 @@ function optionClients(current='') {
     openModal({title:p.name,wide:true,content:`<div class="protocol-detail">
       <div class="stats-grid compact-stats">${statCard('Duração',`${num(p.duration)} min`,'','clock')}${statCard('Custo',currency(p.cost),'','wallet')}${statCard('Preço',currency(p.price),'','wallet')}${statCard('Lucro',currency(num(p.price)-num(p.cost)),'','wallet')}</div>
       <section><h4>Produtos, estoque e custos</h4>${(p.products||[]).length?`<div class="responsive-table"><table><thead><tr><th>Produto</th><th>Uso/sessão</th><th>Estoque atual</th><th>Custo</th></tr></thead><tbody>${linkedProtocolProducts(p).map(x=>{const product=findProductLocal(x.productId,x.productName);return `<tr><td data-label="Produto">${esc(x.productName)} ${x.linked?'':chip('Sem vínculo','warn')}</td><td data-label="Uso/sessão">${num(x.qty)||'—'} ${esc(x.unit||'')}</td><td data-label="Estoque atual">${product?`${num(product.stock)} ${esc(product.unit||'')}`:'—'}</td><td data-label="Custo">${currency(x.cost)}</td></tr>`;}).join('')}</tbody></table></div><p class="muted">Custo dos insumos vinculados: ${currency((p.products||[]).reduce((sum,x)=>sum+num(x.cost),0))}.</p>`:'<p class="muted">Nenhum produto vinculado.</p>'}</section>
+      <section><h4>Descartáveis por sessão</h4>${(p.disposables||[]).length?`<div class="responsive-table"><table><thead><tr><th>Descartável</th><th>Uso/sessão</th><th>Estoque atual</th><th>Custo</th></tr></thead><tbody>${linkedProtocolDisposables(p).map(x=>{const disposable=findDisposableLocal(x.disposableId,x.disposableName);return `<tr><td data-label="Descartável">${esc(x.disposableName)} ${x.linked?'':chip('Sem vínculo','warn')}</td><td data-label="Uso/sessão">${num(x.qty)||'—'} ${esc(x.unit||'')}</td><td data-label="Estoque atual">${disposable?`${num(disposable.stock)} ${esc(disposable.unit||'')}`:'—'}</td><td data-label="Custo">${currency(x.cost)}</td></tr>`;}).join('')}</tbody></table></div><p class="muted">Custo dos descartáveis vinculados: ${currency((p.disposables||[]).reduce((sum,x)=>sum+num(x.cost),0))}.</p>`:'<p class="muted">Nenhum descartável vinculado.</p>'}</section>
       <section><h4>Orientações</h4><p>${esc(p.preparation||'Nenhuma orientação cadastrada.')}</p></section>
       <section><h4>Retorno</h4><p>${p.returnDays?`Sugerido em ${num(p.returnDays)} dias.`:'Sem intervalo definido.'}</p></section>
     </div>`,extraFooter:`<button type="button" class="btn danger-soft" data-action="delete-protocol" data-id="${eattr(p.id)}">${icon('trash',17)} Excluir/arquivar</button><button type="button" class="btn secondary" data-action="edit-protocol" data-id="${eattr(p.id)}">${icon('edit',17)} Editar</button>`});

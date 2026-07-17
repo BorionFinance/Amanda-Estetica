@@ -37,6 +37,10 @@ function upcomingAppointments(limit = 8) {
     return data().products.filter(p => !p.archived && Number(p.stock) <= Number(p.minStock));
   }
 
+  function lowStockDisposables() {
+    return data().disposables.filter(d => !d.archived && Number(d.stock) <= Number(d.minStock));
+  }
+
   function canonicalFinanceType(value) {
     const text = normalize(value);
     return /(expense|saida|despesa|custo|pagamento)/.test(text) ? 'expense' : 'income';
@@ -96,7 +100,8 @@ function upcomingAppointments(limit = 8) {
     const privacy = dashboardPrivacyEnabled();
     const recentAlerts = [
       ...dueReturns().slice(0,2).map(r => ({icon:'clock', title:`Retorno de ${r.clientName}`, text:`${formatDate(r.nextReturn)} · ${r.protocolName}`, tone:r.nextReturn < today ? 'danger':'warn'})),
-      ...lowStockProducts().slice(0,2).map(p => ({icon:'flask', title:`Estoque baixo: ${p.name}`, text:`Atual ${p.stock} · mínimo ${p.minStock}`, tone:'warn'}))
+      ...lowStockProducts().slice(0,2).map(p => ({icon:'flask', title:`Estoque baixo: ${p.name}`, text:`Atual ${p.stock} · mínimo ${p.minStock}`, tone:'warn'})),
+      ...lowStockDisposables().slice(0,2).map(d => ({icon:'layers', title:`Estoque baixo: ${d.name}`, text:`Atual ${d.stock} · mínimo ${d.minStock}`, tone:'warn'}))
     ].slice(0,4);
 
     return `<section class="pro-dashboard-heading">

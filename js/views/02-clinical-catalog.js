@@ -260,38 +260,95 @@ function renderProtocols() {
     </section>`;
   }
 
+  /* V1.17.0 — "Produtos e estoque" ganhou uma segunda aba, "Descartáveis",
+     alternada pelo mesmo botão (troca de rótulo/ícone conforme a aba ativa).
+     renderProducts() permanece o nome usado pelo restante do app (menu,
+     atalhos de visualização parcial etc.); ele apenas decide qual aba
+     desenhar, sem duplicar a estrutura de filtros/pesquisa/paginação. */
   function renderProducts() {
+    return productsActiveTabKey() === 'disposables' ? renderDisposablesTab() : renderProductsTab();
+  }
+
+  function productsTabToggleButton() {
+    const onDisposables = productsActiveTabKey() === 'disposables';
+    return `<button type="button" class="btn secondary compact" data-action="toggle-products-tab" title="${onDisposables?'Voltar para produtos':'Abrir descartáveis'}">${icon(onDisposables?'flask':'layers',18)} ${onDisposables?'Produtos':'Descartáveis'}</button>`;
+  }
+
+  function renderProductsTab() {
     const mode=getViewMode('products','list');
     const list=data().products.filter(p=>containsSearch(p.name,p.brand,p.category,p.id)).sort((a,b)=>Number(!!a.archived)-Number(!!b.archived)||a.name.localeCompare(b.name,'pt-BR'));
     const low=list.filter(p=>num(p.stock)<=num(p.minStock)).length;
     const cards=list.map(p=>{
       const isLow=num(p.stock)<=num(p.minStock);
+      const historyBtn=priceHistoryButton('product',p);
+      const trendBadge=priceTrendBadge(p.priceHistory);
       if(mode==='list') return `<article class="list-row product-row ${isLow?'low-stock':''} ${p.archived?'is-archived':''}">
         <div class="record-icon">${icon('flask',20)}</div>
-        <div class="row-main"><strong>${esc(p.name)} ${p.archived?chip('Arquivado','warn'):''}</strong><span>${esc([p.brand,p.category].filter(Boolean).join(' · '))}</span><small>${esc(p.id)} · custo/atend. ${currency(p.costPerService)}</small></div>
+        <div class="row-main"><strong>${esc(p.name)} ${p.archived?chip('Arquivado','warn'):''}</strong><span>${esc([p.brand,p.category].filter(Boolean).join(' · '))}</span><small>${esc(p.id)} · custo/atend. ${currency(p.costPerService)} ${trendBadge}</small></div>
         <div class="stock-control"><button class="icon-btn tiny" data-action="stock-minus" data-id="${eattr(p.id)}">−</button><strong>${num(p.stock)}</strong><button class="icon-btn tiny" data-action="stock-plus" data-id="${eattr(p.id)}">+</button><small>mín. ${num(p.minStock)}</small></div>
         <div>${isLow?chip('Repor','danger'):chip('OK','success')}</div>
-        <div class="row-actions">${p.archived?`<button class="icon-btn small success" data-action="toggle-product-archive" data-id="${eattr(p.id)}" title="Reativar">${icon('refresh',16)}</button>`:''}<button class="icon-btn small" data-action="edit-product" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-product" data-id="${eattr(p.id)}">${icon('trash',16)}</button></div>
+        <div class="row-actions">${historyBtn}${p.archived?`<button class="icon-btn small success" data-action="toggle-product-archive" data-id="${eattr(p.id)}" title="Reativar">${icon('refresh',16)}</button>`:''}<button class="icon-btn small" data-action="edit-product" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-product" data-id="${eattr(p.id)}">${icon('trash',16)}</button></div>
       </article>`;
       if(mode==='compact') return `<article class="product-compact-card ${isLow?'low-stock':''} ${p.archived?'is-archived':''}">
-        <header><div class="record-icon small-icon">${icon('flask',17)}</div><div><small>${esc(p.id)}</small><h3>${esc(p.name)}</h3></div><span class="row-actions">${p.archived?`<button class="icon-btn tiny success" data-action="toggle-product-archive" data-id="${eattr(p.id)}">${icon('refresh',14)}</button>`:''}<button class="icon-btn tiny" data-action="edit-product" data-id="${eattr(p.id)}">${icon('edit',14)}</button><button class="icon-btn tiny danger" data-action="delete-product" data-id="${eattr(p.id)}">${icon('trash',14)}</button></span></header>
+        <header><div class="record-icon small-icon">${icon('flask',17)}</div><div><small>${esc(p.id)}</small><h3>${esc(p.name)}</h3></div><span class="row-actions">${historyBtn}${p.archived?`<button class="icon-btn tiny success" data-action="toggle-product-archive" data-id="${eattr(p.id)}">${icon('refresh',14)}</button>`:''}<button class="icon-btn tiny" data-action="edit-product" data-id="${eattr(p.id)}">${icon('edit',14)}</button><button class="icon-btn tiny danger" data-action="delete-product" data-id="${eattr(p.id)}">${icon('trash',14)}</button></span></header>
         <p>${esc([p.brand,p.category].filter(Boolean).join(' · ') || 'Sem categoria')}</p>
-        <div class="compact-stock"><span><small>Estoque</small><strong>${num(p.stock)}</strong></span><span><small>Mínimo</small><strong>${num(p.minStock)}</strong></span><span><small>Custo/atend.</small><strong>${currency(p.costPerService)}</strong></span></div>
+        <div class="compact-stock"><span><small>Estoque</small><strong>${num(p.stock)}</strong></span><span><small>Mínimo</small><strong>${num(p.minStock)}</strong></span><span><small>Custo/atend.</small><strong>${currency(p.costPerService)} ${trendBadge}</strong></span></div>
         <footer><div class="stock-control compact"><button class="icon-btn tiny" data-action="stock-minus" data-id="${eattr(p.id)}">−</button><strong>${num(p.stock)}</strong><button class="icon-btn tiny" data-action="stock-plus" data-id="${eattr(p.id)}">+</button></div>${isLow?chip('Repor','danger'):chip('OK','success')}</footer>
       </article>`;
       return `<article class="product-card ${isLow?'low-stock':''} ${p.archived?'is-archived':''}">
-        <header><div class="record-icon">${icon('flask',20)}</div><div><small>${esc(p.id)}</small><h3>${esc(p.name)}</h3><span>${esc([p.brand,p.category].filter(Boolean).join(' · ') || 'Sem categoria')}</span></div><span class="row-actions">${p.archived?`<button class="icon-btn small success" data-action="toggle-product-archive" data-id="${eattr(p.id)}">${icon('refresh',16)}</button>`:''}<button class="icon-btn small" data-action="edit-product" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-product" data-id="${eattr(p.id)}">${icon('trash',16)}</button></span></header>
-        <div class="product-card-values"><span><small>Estoque atual</small><strong>${num(p.stock)}</strong></span><span><small>Estoque mínimo</small><strong>${num(p.minStock)}</strong></span><span><small>Custo/atendimento</small><strong>${currency(p.costPerService)}</strong></span></div>
+        <header><div class="record-icon">${icon('flask',20)}</div><div><small>${esc(p.id)}</small><h3>${esc(p.name)}</h3><span>${esc([p.brand,p.category].filter(Boolean).join(' · ') || 'Sem categoria')}</span></div><span class="row-actions">${historyBtn}${p.archived?`<button class="icon-btn small success" data-action="toggle-product-archive" data-id="${eattr(p.id)}">${icon('refresh',16)}</button>`:''}<button class="icon-btn small" data-action="edit-product" data-id="${eattr(p.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-product" data-id="${eattr(p.id)}">${icon('trash',16)}</button></span></header>
+        <div class="product-card-values"><span><small>Estoque atual</small><strong>${num(p.stock)}</strong></span><span><small>Estoque mínimo</small><strong>${num(p.minStock)}</strong></span><span><small>Custo/atendimento</small><strong>${currency(p.costPerService)} ${trendBadge}</strong></span></div>
         <footer><div class="stock-control"><button class="icon-btn tiny" data-action="stock-minus" data-id="${eattr(p.id)}">−</button><strong>${num(p.stock)}</strong><button class="icon-btn tiny" data-action="stock-plus" data-id="${eattr(p.id)}">+</button></div>${isLow?chip('Precisa repor','danger'):chip('Estoque OK','success')}</footer>
       </article>`;
     }).join('');
     const containerClass=mode==='list'?'list-panel':mode==='compact'?'compact-grid product-compact-grid':'card-grid products-grid';
     return `<section class="section-head">
       <div><span class="eyebrow">Materiais da clínica</span><h2>Produtos e estoque</h2><p>${low ? `${low} produto${low>1?'s':''} precisa${low>1?'m':''} de atenção.` : 'Estoque sem alertas no momento.'}</p></div>
-      <div class="head-actions">${viewModeSwitcher('products',mode)}<button class="btn primary" data-action="add-product">${icon('plus',18)} Novo produto</button></div>
+      <div class="head-actions">${productsTabToggleButton()}${viewModeSwitcher('products',mode)}<button class="btn primary" data-action="add-product">${icon('plus',18)} Novo produto</button></div>
     </section>
     <section class="${containerClass}" data-view-content="products">
       ${list.length ? cards : emptyState('Nenhum produto','Cadastre produtos, custos e quantidade em estoque.','add-product','Cadastrar produto')}
+    </section>`;
+  }
+
+  /* V1.17.0 — aba "Descartáveis": reaproveita integralmente as classes visuais
+     de produtos (product-row/product-card/product-compact-card, stock-control
+     etc.) para manter o mesmo padrão de cores, bordas, sombras e animação,
+     só trocando ícone, textos e as ações (que apontam para os descartáveis). */
+  function renderDisposablesTab() {
+    const mode=getViewMode('disposables','list');
+    const list=data().disposables.filter(d=>containsSearch(d.name,d.category,d.supplier,d.id)).sort((a,b)=>Number(!!a.archived)-Number(!!b.archived)||a.name.localeCompare(b.name,'pt-BR'));
+    const low=list.filter(d=>num(d.stock)<=num(d.minStock)).length;
+    const cards=list.map(d=>{
+      const isLow=num(d.stock)<=num(d.minStock);
+      const historyBtn=priceHistoryButton('disposable',d);
+      const trendBadge=priceTrendBadge(d.priceHistory);
+      if(mode==='list') return `<article class="list-row product-row disposable-row ${isLow?'low-stock':''} ${d.archived?'is-archived':''}">
+        <div class="record-icon">${icon('layers',20)}</div>
+        <div class="row-main"><strong>${esc(d.name)} ${d.archived?chip('Arquivado','warn'):''}</strong><span>${esc([d.category,d.supplier].filter(Boolean).join(' · '))}</span><small>${esc(d.id)} · custo/unid. ${currency(d.unitCost)} ${trendBadge}</small></div>
+        <div class="stock-control"><button class="icon-btn tiny" data-action="stock-minus-disposable" data-id="${eattr(d.id)}">−</button><strong>${num(d.stock)}</strong><button class="icon-btn tiny" data-action="stock-plus-disposable" data-id="${eattr(d.id)}">+</button><small>mín. ${num(d.minStock)}</small></div>
+        <div>${isLow?chip('Repor','danger'):chip('OK','success')}</div>
+        <div class="row-actions">${historyBtn}${d.archived?`<button class="icon-btn small success" data-action="toggle-disposable-archive" data-id="${eattr(d.id)}" title="Reativar">${icon('refresh',16)}</button>`:''}<button class="icon-btn small" data-action="edit-disposable" data-id="${eattr(d.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-disposable" data-id="${eattr(d.id)}">${icon('trash',16)}</button></div>
+      </article>`;
+      if(mode==='compact') return `<article class="product-compact-card disposable-compact-card ${isLow?'low-stock':''} ${d.archived?'is-archived':''}">
+        <header><div class="record-icon small-icon">${icon('layers',17)}</div><div><small>${esc(d.id)}</small><h3>${esc(d.name)}</h3></div><span class="row-actions">${historyBtn}${d.archived?`<button class="icon-btn tiny success" data-action="toggle-disposable-archive" data-id="${eattr(d.id)}">${icon('refresh',14)}</button>`:''}<button class="icon-btn tiny" data-action="edit-disposable" data-id="${eattr(d.id)}">${icon('edit',14)}</button><button class="icon-btn tiny danger" data-action="delete-disposable" data-id="${eattr(d.id)}">${icon('trash',14)}</button></span></header>
+        <p>${esc([d.category,d.supplier].filter(Boolean).join(' · ') || 'Sem categoria')}</p>
+        <div class="compact-stock"><span><small>Estoque</small><strong>${num(d.stock)}</strong></span><span><small>Mínimo</small><strong>${num(d.minStock)}</strong></span><span><small>Custo/unid.</small><strong>${currency(d.unitCost)} ${trendBadge}</strong></span></div>
+        <footer><div class="stock-control compact"><button class="icon-btn tiny" data-action="stock-minus-disposable" data-id="${eattr(d.id)}">−</button><strong>${num(d.stock)}</strong><button class="icon-btn tiny" data-action="stock-plus-disposable" data-id="${eattr(d.id)}">+</button></div>${isLow?chip('Repor','danger'):chip('OK','success')}</footer>
+      </article>`;
+      return `<article class="product-card disposable-card ${isLow?'low-stock':''} ${d.archived?'is-archived':''}">
+        <header><div class="record-icon">${icon('layers',20)}</div><div><small>${esc(d.id)}</small><h3>${esc(d.name)}</h3><span>${esc([d.category,d.supplier].filter(Boolean).join(' · ') || 'Sem categoria')}</span></div><span class="row-actions">${historyBtn}${d.archived?`<button class="icon-btn small success" data-action="toggle-disposable-archive" data-id="${eattr(d.id)}">${icon('refresh',16)}</button>`:''}<button class="icon-btn small" data-action="edit-disposable" data-id="${eattr(d.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" data-action="delete-disposable" data-id="${eattr(d.id)}">${icon('trash',16)}</button></span></header>
+        <div class="product-card-values"><span><small>Estoque atual</small><strong>${num(d.stock)}</strong></span><span><small>Estoque mínimo</small><strong>${num(d.minStock)}</strong></span><span><small>Custo/unidade</small><strong>${currency(d.unitCost)} ${trendBadge}</strong></span></div>
+        <footer><div class="stock-control"><button class="icon-btn tiny" data-action="stock-minus-disposable" data-id="${eattr(d.id)}">−</button><strong>${num(d.stock)}</strong><button class="icon-btn tiny" data-action="stock-plus-disposable" data-id="${eattr(d.id)}">+</button></div>${isLow?chip('Precisa repor','danger'):chip('Estoque OK','success')}</footer>
+      </article>`;
+    }).join('');
+    const containerClass=mode==='list'?'list-panel':mode==='compact'?'compact-grid product-compact-grid':'card-grid products-grid';
+    return `<section class="section-head">
+      <div><span class="eyebrow">Itens de consumo único</span><h2>Descartáveis</h2><p>${low ? `${low} descartável${low>1?'is':''} precisa${low>1?'m':''} de atenção.` : 'Estoque de descartáveis sem alertas no momento.'}</p></div>
+      <div class="head-actions">${productsTabToggleButton()}${viewModeSwitcher('disposables',mode)}<button class="btn primary" data-action="add-disposable">${icon('plus',18)} Novo descartável</button></div>
+    </section>
+    <section class="${containerClass}" data-view-content="disposables">
+      ${list.length ? cards : emptyState('Nenhum descartável','Cadastre luvas, agulhas, gaze e outros materiais de consumo único.','add-disposable','Cadastrar descartável')}
     </section>`;
   }
 

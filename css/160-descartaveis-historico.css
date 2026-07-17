@@ -1,0 +1,48 @@
+/**
+ * Amanda Estética v1.17.0 — Descartáveis, histórico de preços e resumo de
+ * custo dos protocolos. Reaproveita variáveis e classes já existentes
+ * (product-card, product-row, chip, icon-btn, responsive-table etc.);
+ * este arquivo cobre só o que é realmente novo.
+ */
+
+/* Indicador de aumento/redução de preço (cards, listas e tabela do histórico) */
+.price-trend{display:inline-flex;align-items:center;gap:2px;color:var(--muted);vertical-align:middle}
+.price-trend.up{color:var(--danger)}
+.price-trend.down{color:var(--success)}
+.price-trend.inline{font-size:9px;font-weight:800;gap:3px}
+.history-icon-btn{color:var(--muted)}
+.history-icon-btn:hover{color:var(--rose-dark)}
+
+/* Resumo de custo do protocolo: produtos / descartáveis / outros / total */
+.cost-breakdown-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.cost-breakdown-grid>span{background:#fcf8f9;border-radius:9px;padding:9px;display:flex;flex-direction:column;gap:3px}
+.cost-breakdown-grid small{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.cost-breakdown-grid strong{font-size:11px}
+.cost-breakdown-grid .cost-breakdown-total{background:var(--surface-rose)}
+@media(max-width:600px){.cost-breakdown-grid{grid-template-columns:1fr 1fr}}
+
+/* Janela de histórico de preços */
+.price-history-modal{display:flex;flex-direction:column;gap:14px}
+.price-history-chart-toggle{display:flex;gap:6px;flex-wrap:wrap}
+.price-history-chart-toggle .btn.is-active{background:var(--rose)!important;color:#fff!important;border-color:transparent!important}
+.price-history-chart{min-height:60px}
+.price-history-chart-svg{width:100%;height:auto;display:block}
+.price-history-chart-empty{text-align:center;padding:22px 0}
+.ph-chart-area{fill:rgba(210,170,103,.20)}
+.ph-chart-line{fill:none;stroke:var(--gold);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.ph-chart-dot{fill:var(--rose-dark);stroke:#fff;stroke-width:1.4}
+
+/* Tabela do histórico: cabeçalho fixo, ordenação por toque/clique e rolagem
+   interna própria (não vira "cards" no celular como a .responsive-table,
+   pois os cabeçalhos precisam continuar visíveis e clicáveis). */
+.price-history-table-wrap{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:14px;-webkit-overflow-scrolling:touch}
+.price-history-table table{width:100%;min-width:460px;border-collapse:collapse;font-size:11px}
+.price-history-table thead th{position:sticky;top:0;background:var(--surface-soft);text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap;touch-action:manipulation}
+.price-history-table thead th.active-sort{color:var(--rose-dark)}
+.price-history-table thead th .sort-arrow{margin-left:2px;font-size:8px}
+.price-history-table td{padding:9px 12px;border-bottom:1px solid #f1e8eb;white-space:nowrap}
+.price-history-table tr:last-child td{border-bottom:0}
+
+/* Aba Descartáveis reaproveita as classes de produto; pequenos ajustes de
+   diferenciação visual leve (mesma paleta, mesma forma). */
+.disposable-row .record-icon,.disposable-card .record-icon,.disposable-compact-card .record-icon{color:var(--rose-dark)}
