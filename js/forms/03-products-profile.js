@@ -47,8 +47,8 @@ function openProductForm(id='') {
       }
     });
     const form=$('#app-modal-form');
-    wireQuickAddSelect(form,'category','productCategories',{label:'categoria'});
-    wireQuickAddSelect(form,'brand','productBrands',{label:'marca'});
+    wireQuickAddSelect(form,'category','productCategories',{sort:false,label:'categoria'});
+    wireQuickAddSelect(form,'brand','productBrands',{sort:false,label:'marca'});
   }
 
   function openFinanceForm(id='',prefill={}) {
@@ -87,7 +87,7 @@ function openProductForm(id='') {
     });
     const form=$('#app-modal-form');
     wireQuickAddSelect(form,'category','financeCategories',{sort:false,label:'categoria financeira'});
-    wireQuickAddSelect(form,'costCenter','costCenters',{label:'centro de custo'});
+    wireQuickAddSelect(form,'costCenter','costCenters',{sort:false,label:'centro de custo'});
   }
 
   async function decodeLocalImage(file) {
@@ -149,6 +149,7 @@ function openProductForm(id='') {
           STATE.profiles.push({id,name:o.name,role:o.role,pin:o.pin,avatarData,color:'#c85f86',clinic,createdAt:nowIso()});
           STATE.dataByProfile[id]={clients:[],products:[],disposables:[],protocols:[],packages:[],appointments:[],attendances:[],anamneses:[],consents:[],photos:[],finance:[],settings:{autosaveFolder:true,autosaveGoogle:true,viewModesBySection:{clients:'cards',protocols:'cards',products:'list',disposables:'list'},viewModes:{clients:'cards',protocols:'cards',products:'list',disposables:'list'}},audit:[]};
           STATE.activeProfileId=id;
+          resetSettingsSection();
         }
         await persist(existing?'Perfil editado':'Perfil criado',{folder:false});
         closeModal();renderShell();toast('Perfil salvo.');

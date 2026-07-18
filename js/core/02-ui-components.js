@@ -127,7 +127,7 @@ function field(label, name, value = '', type = 'text', options = {}) {
     </div>`;
   }
 
-  async function wireQuickAddSelect(form, name, settingsKey, { sort = true, label = 'item' } = {}) {
+  async function wireQuickAddSelect(form, name, settingsKey, { sort = false, label = 'item' } = {}) {
     const select = form.elements[name];
     const box = form.querySelector(`[data-quick-add-box="${CSS.escape(name)}"]`);
     if (!select || !box) return;
@@ -145,7 +145,6 @@ function field(label, name, value = '', type = 'text', options = {}) {
       const finalValue = duplicate || value;
       if (!duplicate) {
         list.push(value);
-        if (sort) list.sort((a,b) => a.localeCompare(b,'pt-BR'));
         await persist(`Novo(a) ${label} cadastrado(a)`, { detail: finalValue });
       }
       select.innerHTML = `<option value="">Selecione</option>${list.map(x => `<option value="${eattr(x)}" ${x === finalValue ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__new__">➕ Criar novo(a)...</option>`;

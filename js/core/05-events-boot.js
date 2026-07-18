@@ -18,13 +18,14 @@ let RESIZE_FRAME = 0;
     applyInterfaceMode();
     CURRENT_VIEW=(location.hash||'#dashboard').slice(1);
     if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
+    if(CURRENT_VIEW==='settings')resetSettingsSection();
     if(sessionStorage.getItem('amanda_clinica_unlocked')==='1'){
       renderShell();
       if(window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.startAutosaveLoop(()=>STATE);
     }else renderLogin();
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.10.6').catch(console.warn);
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.18.0').catch(console.warn);
   }
 
   document.addEventListener('pointerdown', event => {
@@ -93,6 +94,51 @@ let RESIZE_FRAME = 0;
     applyFabPosition();
     setTimeout(()=>{ if(state.fab) delete state.fab.dataset.dragged; },180);
   });
+
+  let SETTINGS_TAG_DRAG_STATE = null;
+
+  document.addEventListener('pointerdown', event => {
+    const handle = event.target.closest?.('[data-tag-drag-handle]');
+    if (!handle || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const item = handle.closest('[data-settings-tag-item]');
+    if (!item) return;
+    SETTINGS_TAG_DRAG_STATE = {
+      pointerId:event.pointerId,
+      key:handle.dataset.key,
+      fromIndex:Number(handle.dataset.index),
+      toIndex:Number(handle.dataset.index),
+      handle,
+      item
+    };
+    handle.setPointerCapture?.(event.pointerId);
+    item.classList.add('is-dragging');
+  });
+
+  document.addEventListener('pointermove', event => {
+    const state = SETTINGS_TAG_DRAG_STATE;
+    if (!state || event.pointerId !== state.pointerId) return;
+    const target = document.elementFromPoint(event.clientX,event.clientY)?.closest?.(`[data-settings-tag-item][data-key="${CSS.escape(state.key)}"]`);
+    document.querySelectorAll('[data-settings-tag-item].is-drag-target').forEach(item=>item.classList.remove('is-drag-target'));
+    if (target) {
+      const nextIndex=Number(target.dataset.index);
+      if (Number.isInteger(nextIndex)) state.toIndex=nextIndex;
+      target.classList.add('is-drag-target');
+    }
+    event.preventDefault();
+  }, {passive:false});
+
+  async function finishSettingsTagDrag(event) {
+    const state = SETTINGS_TAG_DRAG_STATE;
+    if (!state || event.pointerId !== state.pointerId) return;
+    SETTINGS_TAG_DRAG_STATE = null;
+    state.handle.releasePointerCapture?.(event.pointerId);
+    state.item.classList.remove('is-dragging');
+    document.querySelectorAll('[data-settings-tag-item].is-drag-target').forEach(item=>item.classList.remove('is-drag-target'));
+    if (state.fromIndex !== state.toIndex) await moveSettingTag(state.key,state.fromIndex,state.toIndex);
+  }
+
+  document.addEventListener('pointerup', finishSettingsTagDrag);
+  document.addEventListener('pointercancel', finishSettingsTagDrag);
 
   window.addEventListener('resize',()=>{
     if (RESIZE_FRAME) return;
@@ -207,7 +253,7 @@ let RESIZE_FRAME = 0;
         const imported=await ClinicStorage.readUploadedJson(event.target.files[0]);
         if(await confirmAction('Importar este backup substituirá a base atual. Um backup local será criado antes. Continuar?')){
           await ClinicStorage.createLocalBackup(STATE,'antes-de-importar');
-          STATE=imported;data();await runIntegrityAudit({repair:true,save:true});renderShell();toast('Backup importado e vínculos verificados.');
+          STATE=imported;data();await runIntegrityAudit({repair:true,save:true});resetSettingsSection();renderShell();toast('Backup importado e vínculos verificados.');
         }
       }catch(error){toast(error.message,'error');}
       event.target.value='';

@@ -49,7 +49,7 @@ function openDisposableForm(id='') {
     }
   });
   const form=$('#app-modal-form');
-  wireQuickAddSelect(form,'category','disposableCategories',{label:'categoria'});
+  wireQuickAddSelect(form,'category','disposableCategories',{sort:false,label:'categoria'});
   wireQuickAddSelect(form,'unit','disposableUnits',{sort:false,label:'unidade'});
 }
 

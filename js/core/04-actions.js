@@ -20,11 +20,11 @@ async function handleAction(action, el) {
       'reset-device-state':()=>confirmResetAmandaDeviceState(),
       'lock-app':()=>{GoogleDriveClinic?.stopAutosaveLoop?.();sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
       'create-profile':()=>openProfileForm(null),
-      'profile-menu':()=>navTo('settings'),
+      'profile-menu':()=>{resetSettingsSection();if(CURRENT_VIEW==='settings')renderView('page-enter-soft');else navTo('settings');},
       'edit-profile':()=>openProfileForm(activeProfile()),
       'delete-profile':()=>deleteProfileRecord(id),
       'edit-clinic':openClinicForm,
-      'switch-profile':async()=>{STATE.activeProfileId=id;await ClinicStorage.save(STATE);renderShell();toast('Perfil alterado.');},
+      'switch-profile':async()=>{STATE.activeProfileId=id;resetSettingsSection();await ClinicStorage.save(STATE);renderShell();toast('Perfil alterado.');},
       'toggle-expandable-filter':()=>toggleExpandableFilter(el.closest('[data-expandable-filter]')),
       'set-view-mode':async()=>{const view=el.dataset.view,mode=el.dataset.mode;if(!setViewModePreference(view,mode))return;const control=el.closest('[data-expandable-filter],[data-liquid-control]');updateLiquidControl(control,mode);collapseExpandableFilter(control);refreshViewModeContent(view,mode);await persist('',{folder:true});},
       'set-interface-mode':async()=>{const mode=el.dataset.mode;if(!['auto','smartphone','pro'].includes(mode))return;data().settings.interfaceMode=mode;await persist('Modo de interface alterado',{folder:true,google:true});CURRENT_VIEW='settings';location.hash='settings';applyInterfaceMode();renderShell('page-enter-soft');toast(mode==='auto'?'Modo automático ativado.':mode==='smartphone'?'Modo Smartphone ativado.':'Modo Pro ativado.');},
@@ -102,16 +102,16 @@ async function handleAction(action, el) {
       'add-finance':()=>openFinanceForm(),
       'edit-finance':()=>{const f=data().finance.find(x=>x.id===id);if(f&&(f.sourceLocked||f.attendanceId||f.packageFinanceKind)){toast('Lançamento automático: edite o atendimento ou pacote de origem.','warn');return;}openFinanceForm(id);},
       'delete-finance':()=>deleteFinanceRecordSafe(id),
-      'remove-setting-tag':async()=>{
-        const key=el.dataset.key,value=el.dataset.value;
-        const list=data().settings[key];
-        if(!Array.isArray(list))return;
-        const idx=list.findIndex(x=>x===value);
-        if(idx<0)return;
-        list.splice(idx,1);
-        await persist('Item removido das configurações',{detail:value});
-        renderView();
+      'set-settings-section':()=>setSettingsSection(el.dataset.section),
+      'toggle-setting-order':()=>toggleSettingsTagOrdering(el.dataset.key),
+      'move-setting-tag':async()=>{
+        const key=el.dataset.key;
+        const from=Number(el.dataset.index);
+        const direction=el.dataset.direction==='up'?-1:1;
+        await moveSettingTag(key,from,from+direction);
       },
+      'edit-setting-tag':()=>openRenameSettingTag(el.dataset.key,el.dataset.value),
+      'remove-setting-tag':()=>removeSettingTagSafely(el.dataset.key,el.dataset.value),
       'add-setting-tag':async()=>{
         const key=el.dataset.key;
         const input=el.closest('.tag-manager')?.querySelector('[data-tag-input]');
@@ -120,10 +120,9 @@ async function handleAction(action, el) {
         const list=data().settings[key]||(data().settings[key]=[]);
         if(list.some(x=>normalize(x)===normalize(value))){toast(`"${value}" já está cadastrado.`,'error');return;}
         list.push(value);
-        if(key!=='financeCategories')list.sort((a,b)=>a.localeCompare(b,'pt-BR'));
-        await persist('Item adicionado às configurações',{detail:value});
+        await persist('Item adicionado às configurações',{detail:`${key}: ${value}`});
         renderView();
-        toast(`${value} adicionado.`);
+        toast(`${value} adicionado ao final da lista.`);
       },
       'export-finance-csv':exportFinanceCsv,
       'manual-save':manualSave,
@@ -138,9 +137,10 @@ async function handleAction(action, el) {
       'disconnect-folder':async()=>{if(await confirmAction('Esquecer a pasta conectada neste navegador? Os arquivos não serão excluídos.')){await ClinicStorage.forgetFolderHandle();localStorage.removeItem('amanda_clinica_last_folder_save');renderView();toast('Pasta esquecida.');}},
       'export-json':()=>ClinicStorage.downloadJson(STATE),
       'import-json':()=>$('#json-file-input')?.click(),
+      'create-local-backup':async()=>{await ClinicStorage.createLocalBackup(STATE,'manual');toast('Backup local criado.');},
       'show-backups':showBackups,
       'show-integrity-report':showIntegrityReport,
-      'restore-backup':async()=>{if(await confirmAction('Restaurar este backup e substituir os dados atuais?')){const restored=await ClinicStorage.restoreLocalBackup(id);if(restored){await ClinicStorage.createLocalBackup(STATE,'antes-de-restaurar');STATE=restored;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);closeModal();renderShell();toast('Backup restaurado e vínculos verificados.');}}},
+      'restore-backup':async()=>{if(await confirmAction('Restaurar este backup e substituir os dados atuais?')){const restored=await ClinicStorage.restoreLocalBackup(id);if(restored){await ClinicStorage.createLocalBackup(STATE,'antes-de-restaurar');STATE=restored;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);resetSettingsSection();closeModal();renderShell();toast('Backup restaurado e vínculos verificados.');}}},
       'install-app':async()=>{if(deferredInstallPrompt){deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice;deferredInstallPrompt=null;}}
     };
     if(map[action])await map[action]();
@@ -157,6 +157,7 @@ async function handleAction(action, el) {
       else sessionStorage.removeItem('amanda_clinica_auth_email');
       CURRENT_VIEW=(location.hash||'#dashboard').slice(1);
       if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
+      if(CURRENT_VIEW==='settings')resetSettingsSection();
       swapScreen({currentSelector:'.login-shell',exitClass:'screen-exit-left',enterClass:'screen-enter-right',renderNext:renderShell});
     };
     if(profile.pin && !bypassPin)showLoginPinPanel(profile,unlock);

@@ -192,17 +192,16 @@ function renderLogin(animationClass = '') {
       SCROLL_OBSERVER = null;
     }
 
-    const stackContainers = root.querySelectorAll('.agenda-list,.packages-list,.clients-grid,.card-grid,.products-grid,.photo-grid,.compact-grid,.list-panel,.ios-settings-main,.ios-settings-aside');
+    const stackContainers = root.querySelectorAll('.agenda-list,.packages-list,.clients-grid,.card-grid,.products-grid,.photo-grid,.compact-grid,.list-panel');
     stackContainers.forEach(container => {
       container.classList.add('ios-scroll-stack','ios-universal-stack');
       const children = Array.from(container.children).filter(item =>
-        item.matches('.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.list-row,.ios-settings-group,.ios-security-note')
+        item.matches('.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.list-row')
         && !item.hasAttribute('data-no-stack')
       );
       const mobileStack = window.matchMedia('(max-width: 860px)').matches || document.documentElement.classList.contains('ui-smartphone');
-      const isSettings = container.matches('.ios-settings-main,.ios-settings-aside');
       const isList = container.matches('.list-panel');
-      const maxStackCards = isSettings ? 9 : isList ? (mobileStack ? 28 : 42) : (mobileStack ? 20 : 32);
+      const maxStackCards = isList ? (mobileStack ? 28 : 42) : (mobileStack ? 20 : 32);
       children.slice(0,maxStackCards).forEach((item, index) => {
         item.classList.add('ios-stack-card','ios-universal-stack-item');
         item.style.setProperty('--stack-order', String(index + 1));
@@ -214,11 +213,11 @@ function renderLogin(animationClass = '') {
     // Cards sticky já têm movimento próprio no scroll. Aplicar também uma
     // transição de transform neles criava camadas concorrentes e travava a tela.
     const revealSelector = CURRENT_VIEW === 'settings'
-      ? '.ios-settings-heading,.ios-profile-hero'
+      ? '.ios-settings-heading,.settings-section-intro,.settings-profile-hero,.settings-panel,.settings-backup-block'
       : '.section-head,.pro-card,.panel,.list-panel,.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.stat-card';
     const allRevealItems = Array.from(root.querySelectorAll(revealSelector))
       .filter(item => !item.classList.contains('ios-stack-card'));
-    const revealItems = allRevealItems.slice(0, CURRENT_VIEW === 'settings' ? 2 : 18);
+    const revealItems = allRevealItems.slice(0, CURRENT_VIEW === 'settings' ? 10 : 18);
     revealItems.forEach((item, index) => {
       item.classList.add('ios-scroll-reveal');
       item.style.setProperty('--reveal-delay', `${Math.min(index % 4, 3) * 18}ms`);
@@ -242,19 +241,24 @@ function renderLogin(animationClass = '') {
   }
 
   function navTo(view, options = {}) {
-    if (!VIEW_META[view] || view === CURRENT_VIEW || VIEW_TRANSITIONING) return;
+    if (!VIEW_META[view] || VIEW_TRANSITIONING) return;
+    if (view === CURRENT_VIEW) {
+      if (view === 'settings') { resetSettingsSection(); renderView('page-enter-soft'); }
+      return;
+    }
     const oldIndex = NAV_ORDER.indexOf(CURRENT_VIEW);
     const newIndex = NAV_ORDER.indexOf(view);
     const forward = newIndex >= oldIndex;
     const page = $('#page');
     const finish = () => {
       CURRENT_VIEW = view;
+      if (view === 'settings') resetSettingsSection();
       SEARCH = '';
       if (!options.fromHash) history.replaceState(null, '', `#${view}`);
       renderView(forward ? 'page-enter-right' : 'page-enter-left');
       VIEW_TRANSITIONING = false;
     };
-    if (!page) { CURRENT_VIEW = view; renderShell(); return; }
+    if (!page) { CURRENT_VIEW = view; if (view === 'settings') resetSettingsSection(); renderShell(); return; }
     VIEW_TRANSITIONING = true;
     page.classList.add(forward ? 'page-exit-left' : 'page-exit-right');
     setTimeout(finish, 180);

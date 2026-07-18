@@ -814,5 +814,5 @@ async function deleteProfileRecord(id) {
   if(STATE.dataByProfile)delete STATE.dataByProfile[id];
   if(STATE.activeProfileId===id)STATE.activeProfileId=STATE.profiles[0].id;
   await ClinicStorage.save(STATE);
-  closeModal();renderShell();toast('Perfil excluído.');
+  resetSettingsSection();closeModal();renderShell();toast('Perfil excluído.');
 }

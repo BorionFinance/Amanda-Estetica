@@ -54,7 +54,7 @@ function openAnamnesisForm(id='',prefill={}) {
       }
     });
     const form=$('#app-modal-form');
-    wireQuickAddSelect(form,'skinType','skinTypes',{label:'tipo de pele'});
+    wireQuickAddSelect(form,'skinType','skinTypes',{sort:false,label:'tipo de pele'});
   }
 
   function viewAnamnesis(id) {
@@ -181,7 +181,7 @@ function openAnamnesisForm(id='',prefill={}) {
       }
     });
     const form=$('#app-modal-form');
-    wireQuickAddSelect(form,'area','photoAreas',{label:'área tratada'});
+    wireQuickAddSelect(form,'area','photoAreas',{sort:false,label:'área tratada'});
   }
 
   function photoViewerRoot() {

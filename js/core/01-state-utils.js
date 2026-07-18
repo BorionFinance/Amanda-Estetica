@@ -203,11 +203,11 @@ let STATE = null;
     if (typeof d.settings.autosaveGoogle !== 'boolean') d.settings.autosaveGoogle = true;
     if (!Array.isArray(d.settings.productCategories)) {
       const used = new Set(d.products.map(x => String(x.category || '').trim()).filter(Boolean));
-      d.settings.productCategories = [...used].sort((a,b) => a.localeCompare(b,'pt-BR'));
+      d.settings.productCategories = [...used];
     }
     if (!Array.isArray(d.settings.productBrands)) {
       const used = new Set(d.products.map(x => String(x.brand || '').trim()).filter(Boolean));
-      d.settings.productBrands = [...used].sort((a,b) => a.localeCompare(b,'pt-BR'));
+      d.settings.productBrands = [...used];
     }
     if (!Array.isArray(d.settings.financeCategories)) {
       const defaults = ['Atendimento','Produto','Marketing','Aluguel','Transporte','Imposto','Fornecedor','Outros'];
@@ -232,13 +232,34 @@ let STATE = null;
     if (!Array.isArray(d.settings.disposableCategories)) {
       const defaults = ['Luvas','Agulhas','Gaze','Algodão','Máscaras','Toucas','Seringas','Espátulas','Proteção','Aplicação','Higienização','Outros'];
       const used = d.disposables.map(x => String(x.category || '').trim()).filter(Boolean);
-      d.settings.disposableCategories = [...new Set([...defaults, ...used])].sort((a,b) => a.localeCompare(b,'pt-BR'));
+      d.settings.disposableCategories = [...new Set([...defaults, ...used])];
     }
     if (!Array.isArray(d.settings.disposableUnits)) {
       d.settings.disposableUnits = ['Unidade','Par','Caixa','Pacote','Rolo','Folha','Grama','Mililitro','Centímetro','Metro','Outros'];
     }
+    normalizeSettingsCatalogsV118(d);
     seedLegacyPriceHistory(d);
     return d;
+  }
+
+  function dedupeSettingListPreservingOrder(list) {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).reduce((result, rawValue) => {
+      const value = String(rawValue ?? '').trim();
+      if (!value) return result;
+      const key = normalize(value);
+      if (!key || seen.has(key)) return result;
+      seen.add(key);
+      result.push(value);
+      return result;
+    }, []);
+  }
+
+  function normalizeSettingsCatalogsV118(d) {
+    if (d.settings.catalogsNormalizedV118) return;
+    ['productCategories','productBrands','disposableCategories','disposableUnits','financeCategories','costCenters','photoAreas','skinTypes']
+      .forEach(key => { d.settings[key] = dedupeSettingListPreservingOrder(d.settings[key]); });
+    d.settings.catalogsNormalizedV118 = true;
   }
 
   /* V1.17.0 — cria retroativamente a primeira entrada do histórico de preços
