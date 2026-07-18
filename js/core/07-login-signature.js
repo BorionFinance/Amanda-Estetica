@@ -14,6 +14,21 @@
   let completeTimer = 0;
   let resizeHandler = null;
 
+  // Pré-carrega e decodifica o WebP final assim que o script sobe, em paralelo
+  // com a animação. Isso evita o "piscar" que ocorria ao trocar o src do frame
+  // para uma imagem ainda não baixada/decodificada (o navegador limpava o
+  // <img> por um instante enquanto buscava o arquivo pela primeira vez).
+  let finalFrameReady = false;
+  const finalFramePreload = new Image();
+  finalFramePreload.src = FINAL_PATH;
+  const markFinalReady = () => { finalFrameReady = true; };
+  if(finalFramePreload.decode){
+    finalFramePreload.decode().then(markFinalReady).catch(markFinalReady);
+  }else{
+    finalFramePreload.onload = markFinalReady;
+    finalFramePreload.onerror = markFinalReady;
+  }
+
   function stopLoginSignatureAnimation(){
     runToken += 1;
     clearTimeout(completeTimer);
@@ -84,7 +99,19 @@
           stage.classList.add('is-complete');
           // Troca o WebP animado pela imagem final depois da assinatura. Assim o
           // navegador libera a sequência decodificada em vez de mantê-la ativa.
-          frame.src = FINAL_PATH;
+          // A troca só ocorre com o WebP final já decodificado (pré-carregado no
+          // topo do módulo), então não há frame em branco nem piscada visível.
+          const swapToFinal = () => {
+            if(token !== runToken || !frame.isConnected) return;
+            frame.src = FINAL_PATH;
+          };
+          if(finalFrameReady){
+            swapToFinal();
+          }else if(finalFramePreload.decode){
+            finalFramePreload.decode().then(swapToFinal).catch(swapToFinal);
+          }else{
+            swapToFinal();
+          }
         },ANIMATION_MS);
       }
     };
