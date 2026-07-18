@@ -72,35 +72,30 @@ function htmlFragment(markup) {
 
 function decoratePartialContent(section) {
   if (!section?.matches?.('.clients-grid,.card-grid,.products-grid,.photo-grid,.packages-list,.agenda-list,.compact-grid,.list-panel,.stats-grid')) return;
-  if (section.matches('.stats-grid')) {
-    section.querySelectorAll(':scope > *').forEach(item=>item.classList.add('is-visible'));
-    return;
-  }
-  section.classList.add('ios-scroll-stack','ios-universal-stack');
-  const mobile = window.matchMedia('(max-width:860px)').matches || document.documentElement.classList.contains('ui-smartphone');
-  const limit = section.matches('.list-panel') ? (mobile ? 28 : 42) : (mobile ? 20 : 32);
-  Array.from(section.children).slice(0, limit).forEach((item, index) => {
-    item.classList.add('ios-stack-card','ios-universal-stack-item','is-visible');
-    item.style.setProperty('--stack-order', String(index + 1));
-    item.style.setProperty('--stack-index', String(index));
-    item.style.setProperty('--stack-offset', `${Math.min(index, 3) * (mobile ? 5 : 6)}px`);
+  section.classList.remove('ios-scroll-stack','ios-universal-stack');
+  section.classList.add('performance-list');
+  const items=Array.from(section.children).filter(item =>
+    section.matches('.stats-grid') || item.matches('.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.list-row,.appointment-card,.stat-card')
+  );
+  items.forEach((item,index) => {
+    item.classList.remove('ios-stack-card','ios-universal-stack-item','ios-scroll-reveal');
+    item.classList.add('is-visible');
+    item.style.removeProperty('--stack-order');
+    item.style.removeProperty('--stack-index');
+    item.style.removeProperty('--stack-offset');
+    item.style.removeProperty('--reveal-delay');
+    item.classList.toggle('performance-deferred-item', index >= 6);
   });
 }
 
 function updateContentSection(current, incoming) {
   if (!current || !incoming) return;
-  const oldHeight = current.getBoundingClientRect().height;
-  if (oldHeight > 0) current.style.minHeight = `${Math.round(oldHeight)}px`;
-  current.classList.add('content-refreshing');
+  // Evita leituras geométricas + min-height, que forçavam layout síncrono antes
+  // de cada troca de filtro. A substituição agora ocorre em uma única etapa.
   current.className = incoming.className;
   current.dataset.viewContent = incoming.dataset.viewContent || current.dataset.viewContent || '';
   current.innerHTML = incoming.innerHTML;
   decoratePartialContent(current);
-  current.classList.add('content-refreshing');
-  requestAnimationFrame(() => {
-    current.classList.remove('content-refreshing');
-    current.style.minHeight = '';
-  });
 }
 
 function refreshViewModeContent(view, mode) {

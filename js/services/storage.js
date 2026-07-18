@@ -7,17 +7,19 @@
   const BACKUP_STORE = 'backups';
   const LS_SNAPSHOT = 'amanda_clinica_snapshot_v1';
   const DATA_FILE = 'Amanda_Clinica_Dados.json';
+  let dbPromise = null;
+  let snapshotTimer = 0;
+  let snapshotIdleHandle = 0;
+  let pendingSnapshotState = null;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
   }
 
   function openDb() {
-    return new Promise((resolve, reject) => {
-      if (!('indexedDB' in window)) {
-        reject(new Error('IndexedDB não está disponível neste navegador.'));
-        return;
-      }
+    if (dbPromise) return dbPromise;
+    if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB não está disponível neste navegador.'));
+    dbPromise = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
@@ -28,9 +30,18 @@
           store.createIndex('createdAt', 'createdAt', { unique: false });
         }
       };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error || new Error('Falha ao abrir o armazenamento local.'));
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onversionchange = () => { db.close(); dbPromise = null; };
+        resolve(db);
+      };
+      req.onerror = () => {
+        dbPromise = null;
+        reject(req.error || new Error('Falha ao abrir o armazenamento local.'));
+      };
+      req.onblocked = () => console.warn('[Amanda Clínica] Atualização do banco local aguardando outra aba fechar.');
     });
+    return dbPromise;
   }
 
   async function idbGet(storeName, key) {
@@ -74,17 +85,45 @@
     });
   }
 
-  function snapshotWithoutHeavyPhotos(state) {
-    const snap = clone(state);
-    Object.values(snap.dataByProfile || {}).forEach(data => {
-      (data.photos || []).forEach(photo => {
-        if (photo.imageData && photo.imageData.length > 120000) {
-          photo.imageData = '';
-          photo.localOnly = true;
-        }
-      });
+  function stringifyLightSnapshot(state) {
+    // Uma única serialização, sem clonar toda a base duas vezes. Imagens muito
+    // grandes continuam no IndexedDB e são omitidas apenas do fallback de
+    // localStorage, exatamente para evitar travamentos e estouro de quota.
+    return JSON.stringify(state, (key, value) => {
+      if (key === 'imageData' && typeof value === 'string' && value.length > 120000) return '';
+      return value;
     });
-    return snap;
+  }
+
+  function writePendingSnapshot() {
+    snapshotTimer = 0;
+    snapshotIdleHandle = 0;
+    const state = pendingSnapshotState;
+    pendingSnapshotState = null;
+    if (!state) return;
+    try {
+      const snapshot = stringifyLightSnapshot(state);
+      if (snapshot.length < 4_500_000) localStorage.setItem(LS_SNAPSHOT, snapshot);
+    } catch (error) {
+      console.warn('[Amanda Clínica] Não foi possível criar snapshot local:', error);
+    }
+  }
+
+  function scheduleLocalSnapshot(state) {
+    pendingSnapshotState = state;
+    clearTimeout(snapshotTimer);
+    if (snapshotIdleHandle && 'cancelIdleCallback' in window) {
+      cancelIdleCallback(snapshotIdleHandle);
+      snapshotIdleHandle = 0;
+    }
+    snapshotTimer = setTimeout(() => {
+      snapshotTimer = 0;
+      if ('requestIdleCallback' in window) {
+        snapshotIdleHandle = requestIdleCallback(writePendingSnapshot, { timeout: 1800 });
+      } else {
+        snapshotTimer = setTimeout(writePendingSnapshot, 120);
+      }
+    }, 320);
   }
 
   async function load() {
@@ -110,12 +149,10 @@
     } catch (error) {
       console.error('[Amanda Clínica] Falha no IndexedDB:', error);
     }
-    try {
-      const snapshot = JSON.stringify(snapshotWithoutHeavyPhotos(state));
-      if (snapshot.length < 4_500_000) localStorage.setItem(LS_SNAPSHOT, snapshot);
-    } catch (error) {
-      console.warn('[Amanda Clínica] Não foi possível criar snapshot local:', error);
-    }
+    // O IndexedDB continua sendo salvo imediatamente. O snapshot redundante do
+    // localStorage é consolidado e gravado quando a thread principal estiver
+    // ociosa, evitando congelar botões, modais e rolagem após cada operação.
+    scheduleLocalSnapshot(state);
     return true;
   }
 
@@ -240,6 +277,11 @@
     }
     return state;
   }
+
+
+  window.addEventListener('pagehide', () => {
+    if (pendingSnapshotState) writePendingSnapshot();
+  });
 
   window.ClinicStorage = {
     load,

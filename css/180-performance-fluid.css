@@ -1,0 +1,273 @@
+/**
+ * Amanda Estética Clínica v1.19.0 — desempenho fluido e tipografia refinada.
+ *
+ * Objetivos:
+ * - eliminar repinturas pesadas durante a rolagem;
+ * - remover o empilhamento sticky de listas;
+ * - manter a identidade rosa premium sem blur em tempo real;
+ * - tornar transições mais curtas e previsíveis;
+ * - melhorar a leitura com fontes discretamente maiores.
+ */
+
+:root{
+  --shadow:0 12px 30px rgba(101,60,77,.085);
+  --shadow-sm:0 5px 14px rgba(101,60,77,.065);
+  --fluid-shadow:0 8px 22px rgba(101,60,77,.075);
+  --fluid-shadow-hover:0 10px 25px rgba(101,60,77,.10);
+  --ui-fast:120ms;
+  --ui-normal:180ms;
+  --ui-slow:220ms;
+  font-size:16px;
+}
+
+html{
+  text-rendering:auto;
+  scroll-behavior:auto!important;
+}
+body{
+  font-size:15.5px;
+  line-height:1.5;
+  letter-spacing:-.003em;
+}
+
+/* O backdrop-filter é caro em elementos fixos, sticky e repetidos. A aparência
+   translúcida continua sendo construída com gradientes e fundos opacos leves. */
+*,*::before,*::after{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+
+/* Superfícies estáveis: visual premium sem recalcular o que existe atrás. */
+.sidebar{
+  background:linear-gradient(180deg,rgba(255,253,254,.985),rgba(254,245,249,.98) 52%,rgba(249,233,241,.975))!important;
+  box-shadow:8px 0 24px rgba(74,48,61,.08)!important;
+}
+.topbar{
+  background:linear-gradient(180deg,rgba(253,249,251,.985),rgba(250,243,247,.975))!important;
+  border-bottom:1px solid rgba(222,203,212,.68)!important;
+  box-shadow:0 3px 12px rgba(100,64,80,.045)!important;
+}
+.mobile-bottom-nav{
+  background:linear-gradient(180deg,rgba(255,253,254,.99),rgba(252,242,247,.99))!important;
+  box-shadow:0 -7px 20px rgba(76,35,54,.09)!important;
+}
+.sidebar-scrim{background:rgba(46,31,39,.38)!important}
+.global-search,
+.view-switcher,.filter-segmented,
+.expandable-filter-options,
+.settings-mini-menu nav,.settings-mobile-menu nav,
+.settings-mobile-menu>summary{
+  background:rgba(255,252,254,.965)!important;
+  box-shadow:var(--shadow-sm)!important;
+}
+.panel,.list-panel,.pro-card,.stat-card,.hero-card,
+.client-card,.protocol-card,.package-card,.product-card,.record-card,.photo-card,
+.client-compact-card,.protocol-compact-card,.product-compact-card,.agenda-day,
+.ios-profile-hero,.ios-settings-list,.ios-cloud-card,.ios-clinic-summary,
+.ios-database-stats,.ios-security-note,.ios-interface-card,
+.settings-panel,.settings-backup-block,.settings-catalog-group,
+.settings-page-v118 .tag-manager{
+  background:rgba(255,253,254,.97)!important;
+  box-shadow:var(--fluid-shadow)!important;
+}
+.settings-database-stats,.settings-interface-card,
+.settings-backup-block .ios-cloud-card{
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.modal-backdrop,.app-confirm-backdrop,.ios-wheel-backdrop,.login-auth-backdrop{
+  background:rgba(48,32,42,.34)!important;
+}
+.modal,.app-confirm-card,.ios-wheel-sheet,.login-auth-card{
+  background:linear-gradient(180deg,#fff,#fff8fb)!important;
+  box-shadow:0 20px 52px rgba(55,33,43,.18)!important;
+}
+
+/* Remove a pilha universal: cada cartão volta ao fluxo normal da página. */
+.ios-scroll-stack,.ios-universal-stack,.performance-list{
+  position:relative!important;
+  overflow:visible!important;
+  isolation:auto!important;
+  padding-bottom:0!important;
+}
+.ios-scroll-stack>.ios-stack-card,
+.ios-universal-stack>.ios-universal-stack-item,
+.ios-settings-main>.ios-stack-card,
+.ios-settings-aside>.ios-stack-card,
+.performance-list>*{
+  position:relative!important;
+  top:auto!important;
+  z-index:auto!important;
+  transform:none!important;
+  will-change:auto!important;
+}
+.ios-scroll-stack>.ios-stack-card::before,
+.ios-scroll-stack>.ios-stack-card::after,
+.ios-universal-stack>.ios-universal-stack-item::before,
+.ios-universal-stack>.ios-universal-stack-item::after{
+  display:none!important;
+}
+.ios-scroll-reveal,.ios-scroll-reveal.is-visible{
+  opacity:1!important;
+  transform:none!important;
+  transition:none!important;
+  will-change:auto!important;
+}
+.performance-deferred-item{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 92px;
+}
+.client-card.performance-deferred-item,
+.protocol-card.performance-deferred-item,
+.package-card.performance-deferred-item,
+.product-card.performance-deferred-item,
+.record-card.performance-deferred-item,
+.photo-card.performance-deferred-item,
+.agenda-day.performance-deferred-item{
+  contain-intrinsic-size:auto 180px;
+}
+.list-row,.appointment-card,.timeline-row,.finance-row,.attendance-row,
+.alert-item,.backup-list>div{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 68px;
+}
+.photo-frame{contain:layout paint}
+
+/* Sem camadas GPU permanentes. Somente elementos em movimento momentâneo usam
+   transform; cards e páginas parados ficam em renderização normal. */
+.app-shell,.login-shell,.page,
+.btn,.icon-btn,.nav-item,.profile-mini,.profile-login,.top-profile,
+.client-card,.protocol-card,.package-card,.product-card,.record-card,.photo-card,
+.client-compact-card,.protocol-compact-card,.product-compact-card,
+.settings-tag-item,.settings-menu-item{
+  will-change:auto!important;
+  backface-visibility:visible!important;
+}
+
+/* Transições curtas e somente em propriedades baratas. */
+.btn,.icon-btn,.nav-item,.profile-mini,.top-profile,.settings-menu-item,
+.view-mode-button,.filter-segmented button,.expandable-filter-trigger,
+.expandable-filter-options,.expandable-filter-option,.settings-tag-item,
+.settings-catalog-group>summary>.icon:last-child{
+  transition-duration:var(--ui-fast)!important;
+  transition-timing-function:cubic-bezier(.22,1,.36,1)!important;
+}
+.client-card,.protocol-card,.package-card,.product-card,.record-card,.photo-card,
+.client-compact-card,.protocol-compact-card,.product-compact-card,
+.panel,.list-panel,.pro-card,.stat-card,.agenda-day{
+  transition:background-color var(--ui-fast) ease,border-color var(--ui-fast) ease,box-shadow var(--ui-fast) ease!important;
+}
+
+.page-exit-left{animation:fluidPageExitLeft 105ms ease-out both!important;pointer-events:none}
+.page-exit-right{animation:fluidPageExitRight 105ms ease-out both!important;pointer-events:none}
+.page-enter-right{animation:fluidPageEnterRight 175ms cubic-bezier(.22,1,.36,1) both!important}
+.page-enter-left{animation:fluidPageEnterLeft 175ms cubic-bezier(.22,1,.36,1) both!important}
+.page-enter-soft{animation:fluidPageEnterSoft 150ms cubic-bezier(.22,1,.36,1) both!important}
+@keyframes fluidPageExitLeft{to{opacity:.18;transform:translate3d(-8px,0,0)}}
+@keyframes fluidPageExitRight{to{opacity:.18;transform:translate3d(8px,0,0)}}
+@keyframes fluidPageEnterRight{from{opacity:.25;transform:translate3d(10px,0,0)}to{opacity:1;transform:none}}
+@keyframes fluidPageEnterLeft{from{opacity:.25;transform:translate3d(-10px,0,0)}to{opacity:1;transform:none}}
+@keyframes fluidPageEnterSoft{from{opacity:.40;transform:translate3d(0,5px,0)}to{opacity:1;transform:none}}
+
+/* Tipografia: aumento leve e consistente. */
+.sidebar-brand strong{font-size:16px!important}
+.sidebar-brand small{font-size:12px!important}
+.nav-group>span{font-size:11px!important}
+.nav-item{font-size:14.5px!important}
+.profile-mini strong{font-size:14.5px!important}
+.profile-mini small{font-size:11px!important}
+.topbar-title h1{font-size:19px!important}
+.topbar-title small{font-size:11px!important}
+.global-search input{font-size:14px!important}
+.btn{font-size:14.5px!important}
+.btn.compact{font-size:13.5px!important}
+.eyebrow{font-size:11px!important}
+.section-head h2,.pro-dashboard-heading h2{font-size:clamp(29px,2.45vw,35px)!important}
+.section-head p,.pro-dashboard-heading p{font-size:14.5px!important;line-height:1.55}
+.panel-header h3,.pro-card-header h3{font-size:18px!important}
+.panel-header p,.pro-card-header p{font-size:13px!important}
+.stat-card span,.stat-card small{font-size:11px!important}
+.stat-card strong{font-size:21px!important}
+.timeline-time{font-size:14px!important}
+.timeline-content strong{font-size:14px!important}
+.timeline-content span{font-size:12px!important}
+.alert-item strong{font-size:13px!important}
+.alert-item small{font-size:11px!important}
+.responsive-table table{font-size:13.5px!important}
+.responsive-table th{font-size:10px!important}
+.field>span,.modal-body .field>span{font-size:12.5px!important}
+.field>small,.field-help{font-size:10px!important;line-height:1.5}
+input,select,textarea{font-size:15px}
+.chip,.badge,.status{font-size:10px!important}
+.toast{font-size:12px!important}
+
+/* Configurações: melhora a leitura sem aumentar excessivamente os cartões. */
+.settings-menu-item>span{font-size:13px!important}
+.settings-mobile-menu>summary span{font-size:14px!important}
+.settings-section-intro h3{font-size:27px!important}
+.settings-section-intro p{font-size:14px!important}
+.settings-panel-heading h3,.settings-backup-block>header h3{font-size:17px!important}
+.settings-panel-heading p,.settings-backup-block>header p{font-size:12px!important}
+.settings-active-profile{font-size:10px!important}
+.settings-pin-status{font-size:10px!important}
+.settings-catalog-group>summary>strong{font-size:14px!important}
+.tag-manager-heading strong{font-size:14px!important}
+.tag-manager-heading small{font-size:11px!important}
+.tag-manager-heading .btn{font-size:11px!important}
+.settings-tag-name{font-size:13px!important}
+.settings-tag-position{font-size:11px!important}
+.settings-blocked-delete p,.settings-linked-warning p{font-size:12px!important}
+.ios-settings-list strong{font-size:14px!important}
+.ios-settings-list small{font-size:11px!important}
+.ios-interface-copy strong{font-size:14px!important}
+.ios-interface-copy small{font-size:11px!important}
+.ios-device-mode-option strong{font-size:13px!important}
+.ios-device-mode-option small{font-size:10.5px!important}
+
+/* Desktop com mouse: microinteração discreta, sem zoom de grandes áreas. */
+@media(hover:hover) and (pointer:fine){
+  .nav-item:hover{transform:translate3d(2px,0,0)!important}
+  .btn:hover,.icon-btn:hover,.top-profile:hover,.settings-menu-item:hover{transform:translate3d(0,-1px,0)!important}
+  .client-card:hover,.protocol-card:hover,.package-card:hover,.product-card:hover,
+  .record-card:hover,.photo-card:hover,.client-compact-card:hover,
+  .protocol-compact-card:hover,.product-compact-card:hover,.panel:hover,
+  .list-panel:hover,.pro-card:hover,.stat-card:hover,.agenda-day:hover{
+    transform:none!important;
+    box-shadow:var(--fluid-shadow-hover)!important;
+  }
+}
+
+@media(max-width:900px),(pointer:coarse){
+  body{font-size:15.5px}
+  .topbar-title h1{font-size:16px!important}
+  .topbar-title small{font-size:10px!important}
+  .mobile-bottom-nav button{font-size:10.5px!important}
+  .page{contain:layout style}
+  .sidebar{box-shadow:10px 0 28px rgba(74,48,61,.12)!important}
+  .settings-section-intro h3{font-size:25px!important}
+  .settings-panel,.settings-backup-block{background:rgba(255,253,254,.985)!important}
+  .client-card:hover,.protocol-card:hover,.package-card:hover,.product-card:hover,
+  .record-card:hover,.photo-card:hover,.client-compact-card:hover,
+  .protocol-compact-card:hover,.product-compact-card:hover,.panel:hover,
+  .list-panel:hover,.pro-card:hover,.stat-card:hover,.agenda-day:hover,
+  .btn:hover,.icon-btn:hover,.nav-item:hover,.settings-menu-item:hover{
+    transform:none!important;
+  }
+  .is-touching{transform:scale(.99)!important;transition-duration:60ms!important}
+}
+
+@media(max-width:520px){
+  .section-head h2,.pro-dashboard-heading h2{font-size:29px!important}
+  .settings-heading-v118 h2{font-size:30px!important}
+  .settings-menu-item>span{font-size:13px!important}
+  .settings-tag-name{font-size:13px!important}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    scroll-behavior:auto!important;
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+  }
+}

@@ -12,7 +12,7 @@ function renderLogin(animationClass = '') {
     $('#root').innerHTML = `<main class="login-shell ${animationClass}">
       <button class="login-offline-entry" type="button" data-action="enter-profile-offline" data-id="${eattr(profile?.id || '')}" title="Acesso direto sem login, só neste dispositivo">Entrar sem login</button>
       <div class="login-signature-stage" data-login-signature aria-hidden="true">
-        <img class="login-signature-frame" width="668" height="1000" alt="" aria-hidden="true" decoding="async" fetchpriority="high">
+        <img class="login-signature-frame" width="501" height="750" alt="" aria-hidden="true" decoding="async" fetchpriority="high">
       </div>
       <section class="login-brand">
         <div class="login-brand-copy">
@@ -174,7 +174,7 @@ function renderLogin(animationClass = '') {
     if (animationClass) {
       page.classList.remove('page-enter-left','page-enter-right','page-enter-soft','page-exit-left','page-exit-right');
       page.classList.add(animationClass);
-      setTimeout(() => page.classList.remove(animationClass), 420);
+      setTimeout(() => page.classList.remove(animationClass), 220);
     }
     applyScrollEffects(page);
     const scroller = $('.app-main');
@@ -185,6 +185,16 @@ function renderLogin(animationClass = '') {
 
   let SCROLL_OBSERVER = null;
 
+  /**
+   * v1.19.0 — rolagem leve.
+   *
+   * Versões anteriores transformavam dezenas de cards em elementos sticky e
+   * criavam um IntersectionObserver a cada renderização. Em listas grandes isso
+   * fazia o navegador recalcular composição, sombras e sobreposição durante todo
+   * o scroll. A nova estratégia mantém os cards no fluxo normal e usa
+   * content-visibility/contain via CSS para pular a pintura do que está fora da
+   * tela. Não existe trabalho JavaScript durante a rolagem.
+   */
   function applyScrollEffects(root) {
     if (!root) return;
     if (SCROLL_OBSERVER) {
@@ -192,52 +202,30 @@ function renderLogin(animationClass = '') {
       SCROLL_OBSERVER = null;
     }
 
-    const stackContainers = root.querySelectorAll('.agenda-list,.packages-list,.clients-grid,.card-grid,.products-grid,.photo-grid,.compact-grid,.list-panel');
-    stackContainers.forEach(container => {
-      container.classList.add('ios-scroll-stack','ios-universal-stack');
-      const children = Array.from(container.children).filter(item =>
-        item.matches('.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.list-row')
-        && !item.hasAttribute('data-no-stack')
+    const containers = root.querySelectorAll('.agenda-list,.packages-list,.clients-grid,.card-grid,.products-grid,.photo-grid,.compact-grid,.list-panel');
+    containers.forEach(container => {
+      container.classList.remove('ios-scroll-stack','ios-universal-stack');
+      container.classList.add('performance-list');
+      const items = Array.from(container.children).filter(item =>
+        item.matches('.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.list-row,.appointment-card,.stat-card')
       );
-      const mobileStack = window.matchMedia('(max-width: 860px)').matches || document.documentElement.classList.contains('ui-smartphone');
-      const isList = container.matches('.list-panel');
-      const maxStackCards = isList ? (mobileStack ? 28 : 42) : (mobileStack ? 20 : 32);
-      children.slice(0,maxStackCards).forEach((item, index) => {
-        item.classList.add('ios-stack-card','ios-universal-stack-item');
-        item.style.setProperty('--stack-order', String(index + 1));
-        item.style.setProperty('--stack-index', String(index));
-        item.style.setProperty('--stack-offset', `${Math.min(index, 3) * (mobileStack ? 5 : 6)}px`);
+      items.forEach((item, index) => {
+        item.classList.remove('ios-stack-card','ios-universal-stack-item','ios-scroll-reveal');
+        item.classList.add('is-visible');
+        item.style.removeProperty('--stack-order');
+        item.style.removeProperty('--stack-index');
+        item.style.removeProperty('--stack-offset');
+        item.style.removeProperty('--reveal-delay');
+        item.classList.toggle('performance-deferred-item', index >= 6);
       });
     });
 
-    // Cards sticky já têm movimento próprio no scroll. Aplicar também uma
-    // transição de transform neles criava camadas concorrentes e travava a tela.
-    const revealSelector = CURRENT_VIEW === 'settings'
-      ? '.ios-settings-heading,.settings-section-intro,.settings-profile-hero,.settings-panel,.settings-backup-block'
-      : '.section-head,.pro-card,.panel,.list-panel,.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.stat-card';
-    const allRevealItems = Array.from(root.querySelectorAll(revealSelector))
-      .filter(item => !item.classList.contains('ios-stack-card'));
-    const revealItems = allRevealItems.slice(0, CURRENT_VIEW === 'settings' ? 10 : 18);
-    revealItems.forEach((item, index) => {
-      item.classList.add('ios-scroll-reveal');
-      item.style.setProperty('--reveal-delay', `${Math.min(index % 4, 3) * 18}ms`);
-    });
-    allRevealItems.slice(revealItems.length).forEach(item => item.classList.add('is-visible'));
-
-    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      revealItems.forEach(item => item.classList.add('is-visible'));
-      return;
-    }
-
-    const scroller = $('.app-main') || null;
-    SCROLL_OBSERVER = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        entry.target.classList.add('is-visible');
-        SCROLL_OBSERVER?.unobserve(entry.target);
+    root.querySelectorAll('.ios-scroll-reveal,.section-head,.pro-card,.panel,.list-panel,.agenda-day,.client-card,.protocol-card,.package-card,.record-card,.photo-card,.product-card,.client-compact-card,.protocol-compact-card,.product-compact-card,.stat-card,.ios-settings-heading,.settings-section-intro,.settings-profile-hero,.settings-panel,.settings-backup-block')
+      .forEach(item => {
+        item.classList.remove('ios-scroll-reveal');
+        item.classList.add('is-visible');
+        item.style.removeProperty('--reveal-delay');
       });
-    }, { root: scroller, rootMargin: '80px 0px 80px 0px', threshold: 0.01 });
-    revealItems.forEach(item => SCROLL_OBSERVER.observe(item));
   }
 
   function navTo(view, options = {}) {
@@ -261,7 +249,7 @@ function renderLogin(animationClass = '') {
     if (!page) { CURRENT_VIEW = view; if (view === 'settings') resetSettingsSection(); renderShell(); return; }
     VIEW_TRANSITIONING = true;
     page.classList.add(forward ? 'page-exit-left' : 'page-exit-right');
-    setTimeout(finish, 180);
+    setTimeout(finish, 110);
   }
 
   function updateLiveClock() {

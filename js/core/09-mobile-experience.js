@@ -15,6 +15,10 @@
     networkTimer:0,
     lastHaptic:0,
     swipe:null,
+    viewportFrame:0,
+    lastViewportHeight:0,
+    lastKeyboardHeight:-1,
+    lastMobileState:null,
 
     isMobile(){
       return document.documentElement.classList.contains('ui-smartphone') ||
@@ -41,13 +45,30 @@
 
     setViewport(){
       const vv=window.visualViewport;
-      const height=vv?.height || window.innerHeight;
-      const offset=vv?.offsetTop || 0;
-      const keyboard=Math.max(0,window.innerHeight-height-offset);
-      document.documentElement.style.setProperty('--amanda-app-vh',`${height}px`);
-      document.documentElement.style.setProperty('--amanda-keyboard',`${keyboard}px`);
-      document.body.classList.toggle('keyboard-open',keyboard>120);
-      document.documentElement.classList.toggle('amanda-mobile-ui',this.isMobile());
+      const height=Math.round(vv?.height || window.innerHeight);
+      const offset=Math.round(vv?.offsetTop || 0);
+      const keyboard=Math.max(0,Math.round(window.innerHeight-height-offset));
+      const mobile=this.isMobile();
+      if(height!==this.lastViewportHeight){
+        document.documentElement.style.setProperty('--amanda-app-vh',`${height}px`);
+        this.lastViewportHeight=height;
+      }
+      if(keyboard!==this.lastKeyboardHeight){
+        document.documentElement.style.setProperty('--amanda-keyboard',`${keyboard}px`);
+        document.body.classList.toggle('keyboard-open',keyboard>120);
+        this.lastKeyboardHeight=keyboard;
+      }
+      if(mobile!==this.lastMobileState){
+        document.documentElement.classList.toggle('amanda-mobile-ui',mobile);
+        this.lastMobileState=mobile;
+      }
+    },
+    scheduleViewport(){
+      if(this.viewportFrame)return;
+      this.viewportFrame=requestAnimationFrame(()=>{
+        this.viewportFrame=0;
+        this.setViewport();
+      });
     },
 
     showNetwork(online=navigator.onLine){
@@ -156,8 +177,17 @@
         try{closeModal();}catch(_){ }
       });
 
-      let pointerId=null,startY=0,lastY=0,lastAt=0;
+      let pointerId=null,startY=0,lastY=0,lastAt=0,dragFrame=0,pendingDrag=null;
+      const paintDrag=()=>{
+        dragFrame=0;
+        const next=pendingDrag;pendingDrag=null;
+        if(!next)return;
+        modal.style.setProperty('--sheet-y',`${next.y}px`);
+        backdrop.style.setProperty('--sheet-overlay-opacity',String(next.opacity));
+      };
       const reset=()=>{
+        if(dragFrame){cancelAnimationFrame(dragFrame);dragFrame=0;}
+        pendingDrag=null;
         modal.classList.remove('is-sheet-dragging');
         modal.style.removeProperty('--sheet-y');
         backdrop.style.removeProperty('--sheet-overlay-opacity');
@@ -174,8 +204,8 @@
         const dy=Math.max(0,e.clientY-startY);if(!dy)return;
         e.preventDefault();
         const resisted=dy/(1+dy/680);
-        modal.style.setProperty('--sheet-y',`${resisted}px`);
-        backdrop.style.setProperty('--sheet-overlay-opacity',String(Math.max(.18,.40-resisted/1050)));
+        pendingDrag={y:resisted,opacity:Math.max(.18,.40-resisted/1050)};
+        if(!dragFrame)dragFrame=requestAnimationFrame(paintDrag);
         lastY=e.clientY;lastAt=performance.now();
       },{passive:false});
       const finish=e=>{
@@ -208,7 +238,7 @@
         if(backdrop)this.decorateModal(backdrop);
         else{const appRoot=document.getElementById('root');if(appRoot)appRoot.inert=false;}
       });
-      this.modalObserver.observe(root,{childList:true,subtree:true});
+      this.modalObserver.observe(root,{childList:true,subtree:false});
       const existing=root.querySelector('.modal-backdrop');if(existing)this.decorateModal(existing);
     },
 
@@ -276,12 +306,11 @@
       this.installTouchFeedback();
       this.installSwipeNavigation();
       this.installFocusTrap();
-      window.addEventListener('resize',()=>this.setViewport(),{passive:true});
-      window.visualViewport?.addEventListener('resize',()=>this.setViewport(),{passive:true});
-      window.visualViewport?.addEventListener('scroll',()=>this.setViewport(),{passive:true});
+      window.addEventListener('resize',()=>this.scheduleViewport(),{passive:true});
+      window.visualViewport?.addEventListener('resize',()=>this.scheduleViewport(),{passive:true});
       window.addEventListener('online',()=>this.showNetwork(true));
       window.addEventListener('offline',()=>this.showNetwork(false));
-      document.addEventListener('visibilitychange',()=>{if(!document.hidden)this.setViewport();});
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)this.scheduleViewport();});
     }
   };
 

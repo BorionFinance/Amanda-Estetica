@@ -11,6 +11,8 @@ let STATE = null;
   let modalSubmitHandler = null;
   let folderSaveTimer = null;
   let googleSaveTimer = null;
+  let folderSaveIdle = null;
+  let googleSaveIdle = null;
   let deferredInstallPrompt = null;
   let ATTENDANCE_FILTER = { mode: 'all', date: '', month: '' };
   let CLIENT_FILTER = { mode: 'active' };
@@ -305,38 +307,52 @@ let STATE = null;
 
   function scheduleFolderSave() {
     clearTimeout(folderSaveTimer);
-    folderSaveTimer = setTimeout(async () => {
-      try {
-        const handle = await ClinicStorage.getFolderHandle();
-        if (!handle) return;
-        if (!(await ClinicStorage.ensurePermission(handle, false))) {
-          updateSaveStatus('Pasta precisa de autorização', 'warn');
-          return;
+    if (folderSaveIdle && 'cancelIdleCallback' in window) cancelIdleCallback(folderSaveIdle);
+    folderSaveIdle = null;
+    folderSaveTimer = setTimeout(() => {
+      const run = async () => {
+        folderSaveIdle = null;
+        try {
+          const handle = await ClinicStorage.getFolderHandle();
+          if (!handle) return;
+          if (!(await ClinicStorage.ensurePermission(handle, false))) {
+            updateSaveStatus('Pasta precisa de autorização', 'warn');
+            return;
+          }
+          await ClinicStorage.saveToFolder(STATE, { handle });
+          updateSaveStatus('Drive sincronizado', 'ok');
+        } catch (error) {
+          console.warn('[Amanda Clínica] Autosave da pasta falhou:', error);
+          updateSaveStatus('Salvo local · Drive pendente', 'warn');
         }
-        await ClinicStorage.saveToFolder(STATE, { handle });
-        updateSaveStatus('Drive sincronizado', 'ok');
-      } catch (error) {
-        console.warn('[Amanda Clínica] Autosave da pasta falhou:', error);
-        updateSaveStatus('Salvo local · Drive pendente', 'warn');
-      }
-    }, 1300);
+      };
+      if ('requestIdleCallback' in window) folderSaveIdle = requestIdleCallback(run, { timeout: 2400 });
+      else setTimeout(run, 0);
+    }, 1500);
   }
 
   function scheduleGoogleDriveSave() {
     clearTimeout(googleSaveTimer);
-    googleSaveTimer = setTimeout(async () => {
-      try {
-        if (!window.GoogleDriveClinic?.isConfigured()) { setCloudSyncStatus('disconnected'); return; }
-        setCloudSyncStatus('syncing','Sincronizando com o Google');
-        await GoogleDriveClinic.save(STATE);
-        setCloudSyncStatus('synced','Sincronizado com o Google');
-        updateSaveStatus('Google Drive sincronizado', 'ok');
-      } catch (error) {
-        console.warn('[Amanda Clínica] Autosave do Google Drive falhou:', error);
-        setCloudSyncStatus('failed','Não sincronizado com o Google');
-        updateSaveStatus('Salvo local · Google pendente', 'warn');
-      }
-    }, 1800);
+    if (googleSaveIdle && 'cancelIdleCallback' in window) cancelIdleCallback(googleSaveIdle);
+    googleSaveIdle = null;
+    googleSaveTimer = setTimeout(() => {
+      const run = async () => {
+        googleSaveIdle = null;
+        try {
+          if (!window.GoogleDriveClinic?.isConfigured()) { setCloudSyncStatus('disconnected'); return; }
+          setCloudSyncStatus('syncing','Sincronizando com o Google');
+          await GoogleDriveClinic.save(STATE);
+          setCloudSyncStatus('synced','Sincronizado com o Google');
+          updateSaveStatus('Google Drive sincronizado', 'ok');
+        } catch (error) {
+          console.warn('[Amanda Clínica] Autosave do Google Drive falhou:', error);
+          setCloudSyncStatus('failed','Não sincronizado com o Google');
+          updateSaveStatus('Salvo local · Google pendente', 'warn');
+        }
+      };
+      if ('requestIdleCallback' in window) googleSaveIdle = requestIdleCallback(run, { timeout: 3000 });
+      else setTimeout(run, 0);
+    }, 1900);
   }
 
   function cloudSyncSnapshot() {

@@ -25,7 +25,7 @@ let RESIZE_FRAME = 0;
     }else renderLogin();
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.18.0').catch(console.warn);
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.19.0').catch(console.warn);
   }
 
   document.addEventListener('pointerdown', event => {
@@ -96,6 +96,9 @@ let RESIZE_FRAME = 0;
   });
 
   let SETTINGS_TAG_DRAG_STATE = null;
+  let SETTINGS_TAG_DRAG_FRAME = 0;
+  let SETTINGS_TAG_DRAG_POINT = null;
+  let SETTINGS_TAG_DRAG_TARGET = null;
 
   document.addEventListener('pointerdown', event => {
     const handle = event.target.closest?.('[data-tag-drag-handle]');
@@ -117,12 +120,25 @@ let RESIZE_FRAME = 0;
   document.addEventListener('pointermove', event => {
     const state = SETTINGS_TAG_DRAG_STATE;
     if (!state || event.pointerId !== state.pointerId) return;
-    const target = document.elementFromPoint(event.clientX,event.clientY)?.closest?.(`[data-settings-tag-item][data-key="${CSS.escape(state.key)}"]`);
-    document.querySelectorAll('[data-settings-tag-item].is-drag-target').forEach(item=>item.classList.remove('is-drag-target'));
-    if (target) {
-      const nextIndex=Number(target.dataset.index);
-      if (Number.isInteger(nextIndex)) state.toIndex=nextIndex;
-      target.classList.add('is-drag-target');
+    SETTINGS_TAG_DRAG_POINT={x:event.clientX,y:event.clientY,pointerId:event.pointerId};
+    if(!SETTINGS_TAG_DRAG_FRAME){
+      SETTINGS_TAG_DRAG_FRAME=requestAnimationFrame(()=>{
+        SETTINGS_TAG_DRAG_FRAME=0;
+        const active=SETTINGS_TAG_DRAG_STATE;
+        const point=SETTINGS_TAG_DRAG_POINT;
+        SETTINGS_TAG_DRAG_POINT=null;
+        if(!active||!point||point.pointerId!==active.pointerId)return;
+        const target=document.elementFromPoint(point.x,point.y)?.closest?.(`[data-settings-tag-item][data-key="${CSS.escape(active.key)}"]`);
+        if(SETTINGS_TAG_DRAG_TARGET!==target){
+          SETTINGS_TAG_DRAG_TARGET?.classList.remove('is-drag-target');
+          SETTINGS_TAG_DRAG_TARGET=target||null;
+          SETTINGS_TAG_DRAG_TARGET?.classList.add('is-drag-target');
+        }
+        if(target){
+          const nextIndex=Number(target.dataset.index);
+          if(Number.isInteger(nextIndex))active.toIndex=nextIndex;
+        }
+      });
     }
     event.preventDefault();
   }, {passive:false});
@@ -133,7 +149,10 @@ let RESIZE_FRAME = 0;
     SETTINGS_TAG_DRAG_STATE = null;
     state.handle.releasePointerCapture?.(event.pointerId);
     state.item.classList.remove('is-dragging');
-    document.querySelectorAll('[data-settings-tag-item].is-drag-target').forEach(item=>item.classList.remove('is-drag-target'));
+    if(SETTINGS_TAG_DRAG_FRAME){cancelAnimationFrame(SETTINGS_TAG_DRAG_FRAME);SETTINGS_TAG_DRAG_FRAME=0;}
+    SETTINGS_TAG_DRAG_POINT=null;
+    SETTINGS_TAG_DRAG_TARGET?.classList.remove('is-drag-target');
+    SETTINGS_TAG_DRAG_TARGET=null;
     if (state.fromIndex !== state.toIndex) await moveSettingTag(state.key,state.fromIndex,state.toIndex);
   }
 

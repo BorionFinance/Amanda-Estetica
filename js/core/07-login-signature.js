@@ -7,8 +7,8 @@
 (() => {
   const ANIMATION_PATH = 'assets/signature-animation.webp';
   const FINAL_PATH = 'assets/signature-final.webp';
-  const ANIMATION_MS = 1900;
-  const CONTENT_SIZE = {width:668,height:1000};
+  const ANIMATION_MS = 2100;
+  const CONTENT_SIZE = {width:501,height:750};
 
   let runToken = 0;
   let completeTimer = 0;
@@ -75,11 +75,16 @@
       if(token !== runToken || !frame.isConnected) return;
       placeFrame(frame);
       stage.classList.add('is-visible');
-      if(reducedMotion){
+      const isFinalFrame = frame.currentSrc.endsWith(FINAL_PATH) || frame.src.endsWith(FINAL_PATH);
+      if(reducedMotion || isFinalFrame){
         stage.classList.add('is-complete');
       }else{
         completeTimer = window.setTimeout(() => {
-          if(token === runToken && frame.isConnected) stage.classList.add('is-complete');
+          if(token !== runToken || !frame.isConnected) return;
+          stage.classList.add('is-complete');
+          // Troca o WebP animado pela imagem final depois da assinatura. Assim o
+          // navegador libera a sequência decodificada em vez de mantê-la ativa.
+          frame.src = FINAL_PATH;
         },ANIMATION_MS);
       }
     };
