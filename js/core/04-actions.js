@@ -16,6 +16,10 @@ async function handleAction(action, el) {
       'enter-profile':()=>enterProfile(id),
       'enter-profile-google':()=>enterProfileWithGoogle(id,el),
       'enter-profile-offline':()=>enterProfileOffline(id),
+      'retry-drive-connection':()=>retryDriveConnection(),
+      'cancel-drive-connection':()=>cancelConnectionAttempt(),
+      'view-cached-readonly':()=>viewCachedReadOnly(),
+      'confirm-recovery-continue':()=>resolveRecoveryDecision(true),
       'show-login-help':()=>showLoginHelpModal(),
       'reset-device-state':()=>confirmResetAmandaDeviceState(),
       'lock-app':()=>{GoogleDriveClinic?.stopAutosaveLoop?.();sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
@@ -139,6 +143,8 @@ async function handleAction(action, el) {
       'import-json':()=>$('#json-file-input')?.click(),
       'create-local-backup':async()=>{await ClinicStorage.createLocalBackup(STATE,'manual');toast('Backup local criado.');},
       'show-backups':showBackups,
+      'show-drive-backups':showDriveBackups,
+      'preview-drive-backup':()=>previewDriveBackup(id,el.dataset.name||''),
       'show-integrity-report':showIntegrityReport,
       'restore-backup':async()=>{if(await confirmAction('Restaurar este backup e substituir os dados atuais?')){const restored=await ClinicStorage.restoreLocalBackup(id);if(restored){await ClinicStorage.createLocalBackup(STATE,'antes-de-restaurar');STATE=restored;data();await runIntegrityAudit({repair:true,save:false});await ClinicStorage.save(STATE);resetSettingsSection();closeModal();renderShell();toast('Backup restaurado e vínculos verificados.');}}},
       'install-app':async()=>{if(deferredInstallPrompt){deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice;deferredInstallPrompt=null;}}
@@ -148,61 +154,57 @@ async function handleAction(action, el) {
 
   let LOGIN_GOOGLE_INFLIGHT = null;
 
+  function markSessionUnlocked(profile, authMode = 'google', authEmail = '') {
+    STATE.activeProfileId=profile.id;
+    sessionStorage.setItem('amanda_clinica_unlocked','1');
+    sessionStorage.setItem('amanda_clinica_auth_mode',authMode);
+    if(authEmail)sessionStorage.setItem('amanda_clinica_auth_email',authEmail);
+    else sessionStorage.removeItem('amanda_clinica_auth_email');
+  }
+
   function completeProfileUnlock(profile, authMode = 'google', authEmail = '', bypassPin = false) {
     const unlock=()=>{
-      STATE.activeProfileId=profile.id;
-      sessionStorage.setItem('amanda_clinica_unlocked','1');
-      sessionStorage.setItem('amanda_clinica_auth_mode',authMode);
-      if(authEmail)sessionStorage.setItem('amanda_clinica_auth_email',authEmail);
-      else sessionStorage.removeItem('amanda_clinica_auth_email');
+      markSessionUnlocked(profile,authMode,authEmail);
       CURRENT_VIEW=(location.hash||'#dashboard').slice(1);
       if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
       if(CURRENT_VIEW==='settings')resetSettingsSection();
-      swapScreen({currentSelector:'.login-shell',exitClass:'screen-exit-left',enterClass:'screen-enter-right',renderNext:renderShell});
+      swapScreen({currentSelector:'.login-shell, .conn-shell',exitClass:'screen-exit-left',enterClass:'screen-enter-right',renderNext:renderShell});
+      finalizeSessionReady();
     };
     if(profile.pin && !bypassPin)showLoginPinPanel(profile,unlock);
     else unlock();
   }
 
-  function enterProfile(id) {
-    const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
-    completeProfileUnlock(profile,'test','',true);
-  }
-
-  /* V1.16.0 — espelha a mecânica de entrada do Borion: depois de conectar, se já
-     existir um arquivo salvo na pasta do Drive mais novo que os dados deste
-     navegador, ele é carregado direto, sem perguntar nada (é a entrada normal,
-     não uma restauração manual). Se o dado local for o mais novo (ou a pasta
-     ainda não tiver nada), é ele que sobe — nunca perde trabalho não sincronizado
-     só porque a pessoa entrou de novo. Ao final, liga o autosave rotativo. */
-  async function applyGoogleDriveEntrySync(){
-    try{
-      const result = await GoogleDriveClinic.sync(STATE,{interactive:false,backup:true,reason:'entrada-google'});
-      if(result.direction==='remote' && result.state){
-        await ClinicStorage.createLocalBackup(STATE,'antes-de-entrar-google');
-        STATE=result.state;
-        data();
-        await runIntegrityAudit({repair:true,save:false});
-        await ClinicStorage.save(STATE);
-      }
-      setCloudSyncStatus('synced','Sincronizado com o Google');
-    }catch(error){
-      console.warn('[GoogleDriveClinic] sincronização de entrada falhou (login continua local):',error);
-      setCloudSyncStatus('failed','Não sincronizado com o Google');
+  /* V1.20.0 — mesmo o atalho de entrada rápida (sem Google, sem PIN) passa
+     pela validação do Drive quando ele já está configurado neste navegador.
+     Nunca abre um shell editável com dados que não foram conferidos.
+     Importante: só resolve `profile` DEPOIS de attemptDriveEntryAndEnter,
+     porque esse passo pode trocar STATE inteiro pelo conteúdo do Drive —
+     resolver antes pegaria uma referência de um STATE que já não existe mais. */
+  async function enterProfile(id) {
+    if(window.GoogleDriveClinic?.isConfigured?.()){
+      const outcome=await attemptDriveEntryAndEnter({interactive:false});
+      if(!outcome.ok)return;
+      markSessionUnlocked(STATE.profiles.find(x=>x.id===id)||activeProfile(),'test');
+      return;
     }
-    GoogleDriveClinic.startAutosaveLoop(()=>STATE);
+    completeProfileUnlock(STATE.profiles.find(x=>x.id===id)||activeProfile(),'test','',true);
   }
 
   async function enterProfileWithGoogle(id,button){
     if(LOGIN_GOOGLE_INFLIGHT)return await LOGIN_GOOGLE_INFLIGHT;
-    const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
     const original=button?.innerHTML||'';
     LOGIN_GOOGLE_INFLIGHT=(async()=>{
       if(!window.GoogleDriveClinic?.connect)throw new Error('O login Google ainda não está disponível. Atualize a página e tente novamente.');
       if(button){button.disabled=true;button.classList.add('is-loading');button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Conectando ao Google…</span>';}
       const connection=await GoogleDriveClinic.connect(true);
-      if(button)button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Sincronizando…</span>';
-      await applyGoogleDriveEntrySync();
+      if(button)button.innerHTML='<span class="login-spinner" aria-hidden="true"></span><span>Carregando a base da clínica…</span>';
+      // establishAuthoritativeSession assume o #root a partir daqui (tela de
+      // conexão/erro) e pode substituir STATE inteiro pelo conteúdo do Drive —
+      // só depois de ok:true é que resolvemos o perfil e trocamos pro shell.
+      const outcome=await establishAuthoritativeSession({interactive:true});
+      if(!outcome.ok)return null; // tela de erro/cancelamento já foi mostrada
+      const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
       completeProfileUnlock(profile,'google',String(connection.user?.email||''),true);
       return connection.user;
     })().finally(()=>{
@@ -212,9 +214,21 @@ async function handleAction(action, el) {
     return await LOGIN_GOOGLE_INFLIGHT;
   }
 
-  function enterProfileOffline(id){
-    const profile=STATE.profiles.find(x=>x.id===id)||activeProfile();
-    completeProfileUnlock(profile,'test','',true);
+  /* V1.20.0 — "Entrar sem login" costumava pular direto para o shell com o
+     que quer que estivesse no cache local, sem NUNCA conferir o Google
+     Drive. Se o Drive já foi conectado neste navegador antes, ele continua
+     sendo a fonte da verdade também neste atalho: a validação roda em
+     segundo plano (sem popup, silenciosa) antes de liberar a edição. Só
+     quando o Drive nunca foi configurado é que este botão entra 100% local,
+     como antes. */
+  async function enterProfileOffline(id){
+    if(window.GoogleDriveClinic?.isConfigured?.()){
+      const outcome=await attemptDriveEntryAndEnter({interactive:false});
+      if(!outcome.ok)return; // tela de conexão/erro já cobre a interface
+      markSessionUnlocked(STATE.profiles.find(x=>x.id===id)||activeProfile(),'test');
+      return;
+    }
+    completeProfileUnlock(STATE.profiles.find(x=>x.id===id)||activeProfile(),'test','',true);
   }
 
   /* V1.16.0 — painel "Instruções e mais opções" da tela de login, mesmo papel do

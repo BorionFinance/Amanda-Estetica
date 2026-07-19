@@ -33,6 +33,49 @@
   const FORCESAVE_SLOTS = 40;
   const ROTATING_FILE_ID_PREFIX = 'amanda_clinica_gdrive_rotating_file_';
   const ROTATING_SLOT_INDEX_PREFIX = 'amanda_clinica_gdrive_rotating_slot_';
+
+  /* ================================================================
+     V1.20.0 — CORREÇÃO CRÍTICA DE PROTEÇÃO DE DADOS
+     A partir daqui: Google Drive é a fonte oficial da verdade. Nenhuma
+     gravação no arquivo principal acontece sem reconferir, na hora, a
+     revisão remota e sem comparar a contagem de registros com a última
+     base confiável conhecida. Ver AppLifecycle (app-lifecycle.js) e
+     DataGuard (data-guard.js).
+     ================================================================ */
+  const PRESAVE_SNAPSHOT_SLOTS = 30; // "Snapshots/prewrite-N.json" — cópia do arquivo principal
+                                      // tirada IMEDIATAMENTE ANTES de cada gravação que o substitui.
+  const WORKSPACE_KEY_PREFIX = 'amanda_clinica_gdrive_workspace_';
+  const LAST_GOOD_COUNTS_PREFIX = 'amanda_clinica_last_known_good_counts_';
+
+  class DriveGuardError extends Error {
+    constructor(code, message, details = {}) {
+      super(message);
+      this.name = 'DriveGuardError';
+      this.code = code;
+      this.details = details;
+    }
+  }
+
+  function workspaceStorageKey(folderId) { return `${WORKSPACE_KEY_PREFIX}${folderId}`; }
+  function readStoredWorkspaceId(folderId) { return localStorage.getItem(workspaceStorageKey(folderId)) || null; }
+  function writeStoredWorkspaceId(folderId, workspaceId) { if (workspaceId) localStorage.setItem(workspaceStorageKey(folderId), workspaceId); }
+
+  function lastGoodCountsKey(workspaceId) { return `${LAST_GOOD_COUNTS_PREFIX}${workspaceId}`; }
+  function readLastKnownGoodCounts(workspaceId) {
+    if (!workspaceId) return null;
+    try { return JSON.parse(localStorage.getItem(lastGoodCountsKey(workspaceId)) || 'null'); }
+    catch (_) { return null; }
+  }
+  function writeLastKnownGoodCounts(workspaceId, counts) {
+    if (!workspaceId || !counts) return;
+    try { localStorage.setItem(lastGoodCountsKey(workspaceId), JSON.stringify(counts)); } catch (_) {}
+  }
+
+  function newUuid() {
+    if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+    return `ws_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+  }
+
   const resolvedFolders = new Map();
   const resolvedIntegrationFiles = new Map();
   const folderInflight = new Map();
@@ -45,6 +88,13 @@
   let autosaveDirty = false;
   let autosaveInFlight = false;
   let autosaveStateGetter = null;
+
+  // Ativado SOMENTE pelos testes automatizados em /tests (ver __test abaixo).
+  // Nunca é ligado por nenhum caminho do próprio aplicativo em produção —
+  // existe só para permitir testar o pipeline de gravação/leitura guardado
+  // (saveAuthoritative/loadAuthoritative) contra um Google Drive simulado,
+  // sem depender de um fluxo real de login OAuth dentro do teste.
+  let TEST_MODE = false;
 
   const Auth = {
     token: '',
@@ -560,8 +610,185 @@
     writeRotatingSlotIndex(backups.id, kind, slotIndex + 1);
   }
 
+  /* ----------------------------------------------------------------
+     Leitura "oficial" do arquivo principal: sempre busca o conteúdo mais
+     recente do Drive (nunca confia em cache de memória para essa decisão),
+     valida o formato mínimo esperado e devolve também a contagem de
+     registros e a revisão, para quem chamou decidir o que fazer.
+     ---------------------------------------------------------------- */
+  async function readRemoteAuthoritative(folderId) {
+    const file = await resolveDataFile(folderId);
+    if (!file) return { exists: false, state: null, meta: null, revision: 0, workspaceId: null, counts: null };
+    const state = await readJsonFile(file.id);
+    if (!window.DataGuard?.isValidClinicSchema(state)) {
+      throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'O arquivo principal da clínica no Google Drive não tem o formato esperado. Nada foi alterado.', { file });
+    }
+    return {
+      exists: true,
+      state,
+      meta: file,
+      revision: Number(state.databaseRevision) || 0,
+      workspaceId: state.workspaceId || null,
+      counts: window.DataGuard.collectRecordCounts(state)
+    };
+  }
+
+  /* ----------------------------------------------------------------
+     Carregamento autoritativo usado no boot e no login: autentica,
+     resolve a pasta, lê o arquivo principal e valida o schema. Não grava
+     nada — só leitura. Quem chama registra o resultado no AppLifecycle.
+     ---------------------------------------------------------------- */
+  async function loadAuthoritative(options = {}) {
+    const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
+    const remote = await readRemoteAuthoritative(folderId);
+    if (remote.exists) writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
+    return { ...remote, folderId };
+  }
+
+  /* ----------------------------------------------------------------
+     Gravação autoritativa do arquivo principal. É o ÚNICO caminho que
+     pode escrever em Amanda_Clinica_Dados.json — autosave, salvamento
+     manual e primeira conexão passam todos por aqui. Nunca escreve sem:
+       1) reconferir a revisão remota agora mesmo (evita gravar por cima
+          de uma alteração feita por outra aba/dispositivo);
+       2) checar se a contagem de registros caiu de forma suspeita;
+       3) tirar um snapshot do conteúdo anterior;
+       4) reler o que foi gravado para confirmar revisão e hash.
+     ---------------------------------------------------------------- */
+  async function saveAuthoritative(state, options = {}) {
+    const { allowCreate = false, expectedRevision = null, skipSuspiciousCheck = false, reason = 'salvamento', backupSlot = null } = options;
+    const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
+
+    return await withCrossTabLock(`amanda-drive-authoritative-save:${folderId}`, async () => {
+      const remote = await readRemoteAuthoritative(folderId);
+
+      if (!remote.exists && !allowCreate) {
+        throw new DriveGuardError('MISSING_REMOTE', 'Ainda não existe uma base da clínica nesta pasta do Google Drive. Use a opção de criar uma base nova antes de continuar.', {});
+      }
+
+      if (remote.exists) {
+        if (expectedRevision !== null && expectedRevision !== undefined && remote.revision !== expectedRevision) {
+          throw new DriveGuardError('STALE_REVISION', 'O Google Drive foi atualizado por outro dispositivo ou aba desde que esta sessão carregou os dados. Nada foi substituído — recarregue antes de salvar de novo.', {
+            expectedRevision, remoteRevision: remote.revision, remoteState: remote.state, remoteCounts: remote.counts
+          });
+        }
+        if (state.workspaceId && remote.workspaceId && state.workspaceId !== remote.workspaceId) {
+          throw new DriveGuardError('WORKSPACE_MISMATCH', 'Esta pasta do Google Drive pertence a outra base de dados (workspace diferente). Nada foi substituído.', {
+            localWorkspaceId: state.workspaceId, remoteWorkspaceId: remote.workspaceId
+          });
+        }
+        if (!skipSuspiciousCheck) {
+          const nextCounts = window.DataGuard.collectRecordCounts(state);
+          const check = window.DataGuard.detectSuspiciousDrop(nextCounts, remote.counts);
+          if (check.suspicious) {
+            throw new DriveGuardError('SUSPICIOUS_WRITE', `Salvamento bloqueado por segurança: ${window.DataGuard.describeSuspiciousReasons(check.reasons)}. Os dados desta sessão parecem vazios ou incompletos, enquanto o Google Drive tem uma base maior. Nenhuma informação foi substituída.`, {
+              reasons: check.reasons, nextCounts, remoteCounts: remote.counts
+            });
+          }
+        }
+      }
+
+      // Snapshot do conteúdo anterior ANTES de sobrescrever — só existe algo
+      // para guardar quando já havia um arquivo principal.
+      if (remote.exists) {
+        try { await writeRotatingSnapshot(folderId, backupSlot || 'prewrite', PRESAVE_SNAPSHOT_SLOTS, remote.state); }
+        catch (error) { console.warn('[GoogleDriveClinic] Não foi possível criar o snapshot de segurança antes de gravar (a gravação continua):', error); }
+      }
+
+      const workspaceId = state.workspaceId || remote.workspaceId || readStoredWorkspaceId(folderId) || newUuid();
+      const nextRevision = (remote.exists ? remote.revision : 0) + 1;
+      const nextCounts = window.DataGuard.collectRecordCounts(state);
+      const payload = { ...state, workspaceId, databaseRevision: nextRevision, recordCounts: nextCounts };
+      payload.dataHash = await window.DataGuard.stateContentHash(payload);
+
+      const file = await saveDataFile(folderId, payload);
+      writeStoredWorkspaceId(folderId, workspaceId);
+
+      // Relê o que acabou de ser gravado para confirmar que a revisão e o
+      // hash batem — proteção extra contra respostas parciais/corrompidas
+      // da própria API do Drive.
+      const verify = await readJsonFile(file.id);
+      if (Number(verify.databaseRevision) !== nextRevision) {
+        throw new DriveGuardError('VERIFY_FAILED', 'O Google Drive confirmou a gravação, mas o conteúdo relido não bate com o que foi enviado. Verifique a conexão e tente novamente.', { expected: nextRevision, got: verify.databaseRevision });
+      }
+
+      // Cópia extra opcional no rodízio "forcesave" (mesmo papel de antes:
+      // pontos de restauração pedidos explicitamente pela pessoa — conectar
+      // pela primeira vez, "Salvar agora", sincronizar manualmente).
+      if (options.alsoBackupNewContent) {
+        try { await writeRotatingSnapshot(folderId, 'forcesave', FORCESAVE_SLOTS, payload); }
+        catch (error) { console.warn('[GoogleDriveClinic] Cópia adicional em forcesave falhou (gravação principal já está segura):', error); }
+      }
+
+      writeLastKnownGoodCounts(workspaceId, nextCounts);
+      GoogleDriveClinic.currentFile = file;
+      localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
+      return { file, revision: nextRevision, counts: nextCounts, workspaceId, payload };
+    });
+  }
+
+  async function listAllChildren(parentId, mimeType = '') {
+    let q = `'${parentId}' in parents and trashed=false`;
+    if (mimeType) q += ` and mimeType='${mimeType}'`;
+    const params = new URLSearchParams({ q, orderBy: 'modifiedTime desc', pageSize: '200', fields: 'files(id,name,createdTime,modifiedTime,mimeType,size,parents,trashed)' });
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: await headers() });
+    if (!response.ok) throw new Error('Falha ao listar os backups do Google Drive.');
+    const result = await response.json();
+    return Array.isArray(result.files) ? result.files : [];
+  }
+
+  /* Seção 12 — recuperação: lista TODOS os arquivos da pasta "Backups" (os
+     três rodízios: autosave, forcesave e prewrite) para a pessoa escolher um
+     ponto de restauração, com data e nome visíveis antes de abrir qualquer
+     um deles. A contagem de registros só é lida quando a pessoa escolhe
+     pré-visualizar um arquivo específico — listar todos de uma vez seria
+     lento e desnecessário (podem existir até ~90 arquivos no rodízio). */
+  async function listBackupSnapshots() {
+    const { folderId } = await GoogleDriveClinic.ensureConnection(false);
+    const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+    const files = await listAllChildren(backups.id, 'application/json');
+    return files
+      .map(f => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, size: Number(f.size) || 0 }))
+      .sort((a, b) => new Date(b.modifiedTime || 0) - new Date(a.modifiedTime || 0));
+  }
+
+  async function previewSnapshot(fileId) {
+    const state = await readJsonFile(fileId);
+    if (!window.DataGuard?.isValidClinicSchema(state)) {
+      throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'Este arquivo não parece ser um backup válido do Amanda Estética.', {});
+    }
+    return { state, counts: window.DataGuard.collectRecordCounts(state), revision: Number(state.databaseRevision) || 0 };
+  }
+
+  /* Restaurar um snapshot é uma ação EXPLÍCITA da pessoa (ela já viu a
+     contagem de registros antes de confirmar) — por isso pula a checagem de
+     queda suspeita, mas continua tirando um snapshot de segurança do
+     conteúdo atual antes de substituir e continua conferindo a revisão para
+     não perder uma gravação concorrente de outra aba/dispositivo. */
+  async function restoreSnapshot(fileId, options = {}) {
+    const state = await readJsonFile(fileId);
+    if (!window.DataGuard?.isValidClinicSchema(state)) {
+      throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'Este arquivo não parece ser um backup válido do Amanda Estética.', {});
+    }
+    return await saveAuthoritative(state, {
+      interactive: options.interactive === true,
+      expectedRevision: options.expectedRevision,
+      skipSuspiciousCheck: true,
+      reason: 'restauracao-snapshot-drive',
+      alsoBackupNewContent: true
+    });
+  }
+
   const GoogleDriveClinic = {
     currentFile: null,
+    DriveGuardError,
+    loadAuthoritative,
+    saveAuthoritative,
+    readLastKnownGoodCounts,
+    recordKnownGoodCounts: writeLastKnownGoodCounts,
+    listBackupSnapshots,
+    previewSnapshot,
+    restoreSnapshot,
 
     cachedUser() { return Auth.cachedUser(); },
     folderId() { return getFolderId(); },
@@ -570,7 +797,9 @@
     /* V1.16.0 — autosave rotativo (20 slots, 1x por minuto), mesma mecânica do
        Borion Finance. `stateGetter` é uma função tipo `() => STATE`, passada uma
        vez ao iniciar o loop (login com Google ou boot já conectado); o tick só
-       grava de fato quando algo mudou desde a última vez (markAutosaveDirty). */
+       grava de fato quando algo mudou desde a última vez (markAutosaveDirty).
+       V1.20.0 — o loop NUNCA roda antes do AppLifecycle liberar a gravação
+       (base do Drive carregada, validada e hidratada). */
     startAutosaveLoop(stateGetter) {
       if (typeof stateGetter === 'function') autosaveStateGetter = stateGetter;
       this.stopAutosaveLoop();
@@ -583,11 +812,23 @@
     markAutosaveDirty() { autosaveDirty = true; },
     async runAutosaveTick() {
       if (!this.isConfigured() || !autosaveDirty || !autosaveStateGetter) return false;
+      if (window.AppLifecycle && !window.AppLifecycle.canWrite()) return false; // base ainda não validada/hidratada
       if (autosaveInFlight) return false;
       autosaveInFlight = true;
       try {
         const state = autosaveStateGetter();
         if (!state) return false;
+        // Mesmo sendo só uma cópia rotativa (não é o arquivo principal), não
+        // deixa uma base suspeita entrar no rodízio de backups — senão os
+        // próprios backups acabam contaminados.
+        const baseline = window.AppLifecycle?.getLastKnownGoodCounts() || readLastKnownGoodCounts(state.workspaceId || window.AppLifecycle?.getWorkspaceId());
+        const nextCounts = window.DataGuard.collectRecordCounts(state);
+        const check = window.DataGuard.detectSuspiciousDrop(nextCounts, baseline);
+        if (check.suspicious) {
+          console.warn('[GoogleDriveClinic] Autosave rotativo pulado por segurança (contagem suspeita):', window.DataGuard.describeSuspiciousReasons(check.reasons));
+          window.onSuspiciousAutosaveBlocked?.(check.reasons);
+          return false;
+        }
         await writeRotatingSnapshot(getFolderId(), 'autosave', AUTOSAVE_SLOTS, state);
         autosaveDirty = false;
         return true;
@@ -621,7 +862,7 @@
     async ensureConnection(interactive = false) {
       if (!this.isConfigured()) return await this.connect(interactive);
       await Auth.ensureToken(interactive);
-      const user = await assertAuthorizedUser(await Auth.fetchUser());
+      const user = TEST_MODE ? (Auth.user || { sub: 'test-user', email: 'test@example.invalid' }) : await assertAuthorizedUser(await Auth.fetchUser());
       const folderId = getFolderId();
       await ensureAppFolders(folderId);
       return { user, folderId };
@@ -633,40 +874,63 @@
       return this.currentFile;
     },
 
+    /* V1.20.0 — este método público continua existindo para não quebrar quem
+       já chama GoogleDriveClinic.save(...), mas agora delega inteiramente
+       para saveAuthoritative: revisão remota é reconferida na hora, contagem
+       de registros é comparada com a última base confiável e o conteúdo
+       anterior é salvo em snapshot antes de ser substituído. */
     async save(state, options = {}) {
-      const { folderId } = await this.ensureConnection(options.interactive === true);
-      const file = await saveDataFile(folderId, state);
-      this.currentFile = file;
-      localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
-
-      if (options.backup) {
-        await writeRotatingSnapshot(folderId, 'forcesave', FORCESAVE_SLOTS, state);
+      const result = await saveAuthoritative(state, {
+        interactive: options.interactive === true,
+        allowCreate: options.allowCreate === true,
+        expectedRevision: options.expectedRevision !== undefined ? options.expectedRevision : (window.AppLifecycle ? window.AppLifecycle.getRevision() : null),
+        skipSuspiciousCheck: options.skipSuspiciousCheck === true,
+        reason: options.reason,
+        alsoBackupNewContent: options.backup === true
+      });
+      if (window.AppLifecycle) {
+        window.AppLifecycle.setRevision(result.revision);
+        window.AppLifecycle.setWorkspaceId(result.workspaceId);
+        window.AppLifecycle.setLastKnownGoodCounts(result.counts);
       }
-      return file;
+      return result.file;
     },
 
+    /* V1.20.0 — leitura sempre autoritativa (busca o arquivo mais recente do
+       Drive agora, nunca de cache em memória) e com validação de schema. */
     async load(options = {}) {
-      await this.ensureConnection(options.interactive === true);
-      const file = this.currentFile || await this.findDataFile();
-      if (!file) throw new Error('Ainda não existe um arquivo da clínica nesta pasta.');
-      const [state, meta] = await Promise.all([readJsonFile(file.id), getMeta(file.id)]);
-      this.currentFile = meta;
-      return { state, meta };
+      const remote = await loadAuthoritative(options);
+      if (!remote.exists) throw new Error('Ainda não existe um arquivo da clínica nesta pasta.');
+      return { state: remote.state, meta: remote.meta, revision: remote.revision, counts: remote.counts, workspaceId: remote.workspaceId };
     },
 
+    /* V1.20.0 — decide com base na REVISÃO que esta sessão efetivamente
+       carregou (AppLifecycle.getRevision()), não mais em comparar relógios
+       (`updatedAt`). Isso fecha a falha em que um estado local recém-criado
+       (com `updatedAt` "agora") parecia mais novo que uma base remota
+       preenchida só porque acabara de ser salvo localmente. Se esta sessão
+       nunca carregou nenhuma revisão confirmada do Drive, o remoto sempre
+       vence — nunca o contrário. */
     async sync(state, options = {}) {
-      await this.ensureConnection(options.interactive === true);
-      const file = this.currentFile || await this.findDataFile();
-      if (!file) {
-        await this.save(state, { backup: true, reason: 'primeira-sincronizacao' });
-        return { direction: 'local', created: true };
+      const remote = await loadAuthoritative({ interactive: options.interactive === true });
+      if (!remote.exists) {
+        const result = await saveAuthoritative(state, {
+          interactive: options.interactive === true, allowCreate: true,
+          reason: options.reason || 'primeira-sincronizacao', alsoBackupNewContent: true
+        });
+        if (window.AppLifecycle) { window.AppLifecycle.setRevision(result.revision); window.AppLifecycle.setWorkspaceId(result.workspaceId); window.AppLifecycle.setLastKnownGoodCounts(result.counts); }
+        return { direction: 'local', created: true, revision: result.revision };
       }
-      const remote = await this.load();
-      if (remote.state?.updatedAt && new Date(remote.state.updatedAt) > new Date(state.updatedAt || 0)) {
-        return { direction: 'remote', state: remote.state, meta: remote.meta };
+      const sessionRevision = window.AppLifecycle ? window.AppLifecycle.getRevision() : null;
+      if (sessionRevision === null || sessionRevision === undefined || remote.revision > sessionRevision) {
+        return { direction: 'remote', state: remote.state, meta: remote.meta, revision: remote.revision, counts: remote.counts };
       }
-      await this.save(state, { backup: options.backup === true, reason: options.reason || 'sincronizacao' });
-      return { direction: 'local', meta: this.currentFile };
+      const result = await saveAuthoritative(state, {
+        interactive: options.interactive === true, expectedRevision: remote.revision,
+        reason: options.reason || 'sincronizacao', alsoBackupNewContent: options.backup === true
+      });
+      if (window.AppLifecycle) { window.AppLifecycle.setRevision(result.revision); window.AppLifecycle.setWorkspaceId(result.workspaceId); window.AppLifecycle.setLastKnownGoodCounts(result.counts); }
+      return { direction: 'local', meta: this.currentFile, revision: result.revision };
     },
 
     /* BORION INTEROP v1.0.0 — protected transport seam. */
@@ -697,7 +961,30 @@
       resolvedStructures.clear();
       dataFileInflight.clear();
       connectionInflight = null;
+      window.AppLifecycle?.resetForReconnect();
       Auth.signOut();
+    },
+
+    // Somente para os testes automatizados em /tests — nunca chamado por
+    // nenhum caminho do próprio aplicativo em produção.
+    __test: {
+      enableTestMode() { TEST_MODE = true; },
+      setToken(token = 'test-token', user = { sub: 'test-user', email: 'test@example.invalid' }) {
+        Auth.token = token;
+        Auth.expiresAt = Date.now() + 3600000;
+        Auth.user = user;
+      },
+      resetCaches() {
+        resolvedFolders.clear();
+        resolvedIntegrationFiles.clear();
+        integrationFileInflight.clear();
+        structureInflight.clear();
+        resolvedStructures.clear();
+        dataFileInflight.clear();
+      },
+      readRemoteAuthoritative,
+      DriveGuardError,
+      setFolderIdForTests(id) { setFolderId(id); }
     }
   };
 

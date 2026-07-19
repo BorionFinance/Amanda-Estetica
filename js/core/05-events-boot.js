@@ -5,27 +5,74 @@
  * Arquivo modular: edite somente esta área quando a mudança for específica deste módulo.
  */
 
+// V1.20.0 — instância única da máquina de estados de inicialização. Enquanto
+// ela não chegar em READY (ver js/core/10-connection-lifecycle.js), nenhuma
+// tela editável é mostrada e nenhuma gravação é permitida.
+window.AppLifecycle = window.AppLifecycleFactory.createLifecycle();
+
 let RESIZE_FRAME = 0;
   let FAB_MOVE_FRAME = 0;
   let FAB_PENDING_POSITION = null;
 
+  /* V1.20.0 — CORREÇÃO CRÍTICA: antes, o app carregava o cache local
+     (IndexedDB/localStorage) e já liberava autosave/edição, sem nunca
+     conferir o Google Drive. Se o cache local estivesse vazio ou antigo
+     (célular reconfigurado, navegador limpo, etc.), qualquer edição
+     disparava uma gravação no Drive por cima da base real da clínica.
+     Agora: o cache local só serve de ponto de partida em memória. Se o
+     Google Drive já foi conectado neste navegador, ELE é a fonte da
+     verdade — o app não libera nada até carregar e validar a base de lá,
+     mostrando uma tela de conexão/erro no lugar do shell até então. */
   async function boot() {
-    STATE=await ClinicStorage.load();
-    if(!STATE||STATE.appId!=='amanda-clinica')STATE=clone(window.AMANDA_INITIAL_DATA);
-    if(!STATE.profiles?.length)STATE=clone(window.AMANDA_INITIAL_DATA);
-    data();
-    await runIntegrityAudit({repair:true,save:true});
-    applyInterfaceMode();
-    CURRENT_VIEW=(location.hash||'#dashboard').slice(1);
-    if(!VIEW_META[CURRENT_VIEW])CURRENT_VIEW='dashboard';
-    if(CURRENT_VIEW==='settings')resetSettingsSection();
-    if(sessionStorage.getItem('amanda_clinica_unlocked')==='1'){
-      renderShell();
-      if(window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.startAutosaveLoop(()=>STATE);
-    }else renderLogin();
+    STATE = await ClinicStorage.load();
+    if (!STATE || STATE.appId !== 'amanda-clinica') STATE = clone(window.AMANDA_INITIAL_DATA);
+    if (!STATE.profiles?.length) STATE = clone(window.AMANDA_INITIAL_DATA);
+
+    const driveConfigured = !!(window.GoogleDriveClinic?.isConfigured?.());
+    const wasUnlocked = sessionStorage.getItem('amanda_clinica_unlocked') === '1';
+
+    if (!driveConfigured) {
+      // Google Drive nunca foi conectado neste navegador: não há nada remoto
+      // para proteger ainda. Segue o fluxo local normal.
+      data();
+      await runIntegrityAudit({ repair: true, save: true });
+      recordCloudAuthoritativeMigrationOnce();
+      window.AppLifecycle.markRemoteLoaded(null, null);
+      window.AppLifecycle.markRemoteValidated();
+      applyInterfaceMode();
+      CURRENT_VIEW = (location.hash || '#dashboard').slice(1);
+      if (!VIEW_META[CURRENT_VIEW]) CURRENT_VIEW = 'dashboard';
+      if (CURRENT_VIEW === 'settings') resetSettingsSection();
+      if (wasUnlocked) {
+        renderShell();
+        finalizeSessionReady();
+      } else {
+        renderLogin();
+      }
+    } else {
+      // Google Drive já foi conectado antes neste navegador: ele é a fonte
+      // oficial da verdade. Se a sessão ainda não estava desbloqueada, mostra
+      // a tela de login normal (a validação roda quando a pessoa escolher
+      // "Entrar com Google" ou "Entrar sem login"). Se já estava desbloqueada
+      // (ex.: F5 no meio do uso), revalida contra o Drive ANTES de mostrar o
+      // shell de novo — nunca reabre direto confiando só na flag de sessão.
+      if (wasUnlocked) {
+        const outcome = await attemptDriveEntryAndEnter({ interactive: false });
+        if (!outcome.ok && !outcome.cancelled) {
+          // Tela de erro/offline já está visível (establishAuthoritativeSession
+          // cuidou disso). Nada mais a fazer aqui além de aguardar a pessoa
+          // decidir (tentar de novo, ver dados salvos por último, sair).
+        }
+      } else {
+        applyInterfaceMode();
+        CURRENT_VIEW = (location.hash || '#dashboard').slice(1);
+        if (!VIEW_META[CURRENT_VIEW]) CURRENT_VIEW = 'dashboard';
+        renderLogin();
+      }
+    }
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.19.1').catch(console.warn);
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.20.0').catch(console.warn);
   }
 
   document.addEventListener('pointerdown', event => {

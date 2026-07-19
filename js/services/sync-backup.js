@@ -53,12 +53,33 @@ async function manualSave() {
         updateSaveStatus('Conectando ao Google…','warn');
         setCloudSyncStatus('syncing','Conectando ao Google');
         const connection=await GoogleDriveClinic.connect(true);
-        await GoogleDriveClinic.save(STATE,{backup:true,reason:'primeira-conexao'});
+        const result=await GoogleDriveClinic.sync(STATE,{interactive:true,backup:true,reason:'primeira-conexao'});
+        if(result.direction==='remote'){
+          if(!await confirmAction('Esta pasta do Google Drive já tem uma base salva da clínica. Deseja carregá-la e substituir os dados deste navegador? Um backup local será criado antes.')){
+            setCloudSyncStatus('failed','Não sincronizado com o Google');
+            updateSaveStatus('Conexão cancelada','warn');
+            toast('Nada foi substituído.','warn');
+            return;
+          }
+          await ClinicStorage.createLocalBackup(STATE,'antes-de-conectar-google');
+          STATE=result.state;
+          data();
+          await runIntegrityAudit({repair:true,save:false});
+          await ClinicStorage.save(STATE);
+          if(window.AppLifecycle){
+            window.AppLifecycle.setRevision(result.revision);
+            window.AppLifecycle.setWorkspaceId(STATE.workspaceId);
+            window.AppLifecycle.setLastKnownGoodCounts(result.counts);
+            window.AppLifecycle.markRemoteLoaded(result.revision, STATE.workspaceId);
+            window.AppLifecycle.markRemoteValidated();
+          }
+          window.GoogleDriveClinic.recordKnownGoodCounts?.(STATE.workspaceId, result.counts);
+        }
         GoogleDriveClinic.startAutosaveLoop(()=>STATE);
         setCloudSyncStatus('synced','Sincronizado com o Google');
         updateSaveStatus('Google Drive conectado','ok');
-        toast(`Conta ${connection.user.email} conectada e primeiro backup criado.`);
-        renderView();
+        toast(`Conta ${connection.user.email} conectada e sincronizada.`);
+        renderShell();
       }catch(error){
         setCloudSyncStatus('failed','Não sincronizado com o Google');
         updateSaveStatus('Salvo localmente','ok');
@@ -187,6 +208,57 @@ async function manualSave() {
   async function showBackups() {
     const list=await ClinicStorage.listLocalBackups();
     openModal({title:'Backups locais',wide:true,content:list.length?`<div class="backup-list">${list.map(b=>`<div><span>${icon('save',18)}</span><div><strong>${formatDateTime(b.createdAt)}</strong><small>${esc(b.reason)}</small></div><button type="button" class="btn secondary compact" data-action="restore-backup" data-id="${eattr(b.id)}">Restaurar</button></div>`).join('')}</div>`:`<p class="muted">Nenhum backup local criado ainda.</p>`});
+  }
+
+  /* V1.20.0 — seção 12 (recuperação): lista os pontos de restauração salvos
+     no Google Drive (rodízios autosave/forcesave/prewrite, ver
+     google-drive.js). Mostra data e nome de cada um; a contagem de
+     registros só é lida quando a pessoa escolhe pré-visualizar um arquivo
+     específico, não para a lista inteira de uma vez. */
+  async function showDriveBackups() {
+    if (!window.GoogleDriveClinic?.isConfigured?.()) { toast('Conecte o Google Drive primeiro.','warn'); return; }
+    try {
+      updateSaveStatus('Consultando backups do Google Drive…','warn');
+      const list = await GoogleDriveClinic.listBackupSnapshots();
+      updateSaveStatus('Google Drive sincronizado','ok');
+      openModal({
+        title:'Backups no Google Drive',
+        sub:'Cópias automáticas e manuais guardadas na pasta "Backups" da clínica no Drive.',
+        wide:true,
+        content:list.length?`<div class="backup-list">${list.map(f=>`<div><span>${icon('clock',18)}</span><div><strong>${formatDateTime(f.modifiedTime)}</strong><small>${esc(f.name)}</small></div><button type="button" class="btn secondary compact" data-action="preview-drive-backup" data-id="${eattr(f.id)}" data-name="${eattr(f.name)}">Ver e restaurar</button></div>`).join('')}</div>`:`<p class="muted">Nenhum backup encontrado ainda nesta pasta do Google Drive.</p>`
+      });
+    } catch (error) {
+      updateSaveStatus('Google Drive pendente','warn');
+      toast(error.message,'error');
+    }
+  }
+
+  async function previewDriveBackup(fileId, name) {
+    try {
+      const preview = await GoogleDriveClinic.previewSnapshot(fileId);
+      const c = preview.counts;
+      closeModal();
+      const summary = `${name} — ${c.clients} clientes, ${c.appointments} agendamentos, ${c.attendances} atendimentos, ${c.products} produtos, ${c.finance} lançamentos financeiros.`;
+      if (!await confirmAction(`Restaurar este backup substituirá a base atual do Google Drive. ${summary} Um backup de segurança do que está no Drive agora será criado antes de continuar.`,{title:'Restaurar backup do Google Drive',confirmText:'Restaurar',tone:'danger'})) return;
+      updateSaveStatus('Restaurando backup do Google Drive…','warn');
+      await ClinicStorage.createLocalBackup(STATE,'antes-de-restaurar-drive');
+      const result = await GoogleDriveClinic.restoreSnapshot(fileId,{expectedRevision:window.AppLifecycle?.getRevision()});
+      STATE = result.payload;
+      data();
+      await runIntegrityAudit({repair:true,save:false});
+      await ClinicStorage.save(STATE);
+      if (window.AppLifecycle) {
+        window.AppLifecycle.setRevision(result.revision);
+        window.AppLifecycle.setWorkspaceId(result.workspaceId);
+        window.AppLifecycle.setLastKnownGoodCounts(result.counts);
+      }
+      updateSaveStatus('Backup restaurado','ok');
+      renderShell();
+      toast('Backup do Google Drive restaurado.');
+    } catch (error) {
+      updateSaveStatus(error?.code==='STALE_REVISION'?'Google Drive foi atualizado em outro lugar':'Restauração falhou','warn');
+      toast(error.message,'error');
+    }
   }
 
   function exportFinanceCsv() {

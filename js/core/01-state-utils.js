@@ -295,10 +295,30 @@ let STATE = null;
     d.audit = d.audit.slice(0, 200);
   }
 
+  // V1.20.0 — registra, uma única vez por navegador, a migração para o novo
+  // modelo em que o Google Drive é a fonte oficial da verdade (ver
+  // CORREÇÃO CRÍTICA no topo de google-drive.js e 05-events-boot.js).
+  const CLOUD_AUTHORITATIVE_MIGRATION_KEY = 'amanda_cloud_authoritative_migration_v1';
+  function recordCloudAuthoritativeMigrationOnce() {
+    if (localStorage.getItem(CLOUD_AUTHORITATIVE_MIGRATION_KEY)) return;
+    localStorage.setItem(CLOUD_AUTHORITATIVE_MIGRATION_KEY, nowIso());
+    try { addAudit('Proteção de dados atualizada (V1.20.0)', 'Google Drive passou a ser a fonte oficial da base; o cache local deste navegador deixou de ser usado como base principal.'); }
+    catch (_) { /* sem perfil ativo ainda — a marca em localStorage já é suficiente */ }
+  }
+
   async function persist(reason = '', options = {}) {
     if (reason) addAudit(reason, options.detail || '');
     await ClinicStorage.save(STATE);
     if (window.AmandaBorionInterop) AmandaBorionInterop.schedule(STATE); // protected interop seam
+    // V1.20.0 — nenhuma gravação remota é agendada enquanto a base do Google
+    // Drive não estiver carregada, validada e hidratada nesta sessão. O dado
+    // ainda fica salvo neste navegador (linha acima); só a sincronização com
+    // o Drive/pasta é que espera a conexão voltar.
+    if (window.AppLifecycle && !window.AppLifecycle.canWrite()) {
+      updateSaveStatus('Sem conexão · alteração não sincronizada', 'warn');
+      toast('Sem conexão com o Google Drive. Esta alteração ficou só neste navegador até reconectar.', 'warn');
+      return;
+    }
     if (window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.markAutosaveDirty();
     updateSaveStatus('Salvo localmente', 'ok');
     if (data().settings.autosaveFolder !== false && options.folder !== false) scheduleFolderSave();
@@ -323,7 +343,12 @@ let STATE = null;
           updateSaveStatus('Drive sincronizado', 'ok');
         } catch (error) {
           console.warn('[Amanda Clínica] Autosave da pasta falhou:', error);
-          updateSaveStatus('Salvo local · Drive pendente', 'warn');
+          if (error?.code === 'SUSPICIOUS_WRITE') {
+            updateSaveStatus('Salvamento na pasta bloqueado por segurança', 'warn');
+            toast(error.message, 'error');
+          } else {
+            updateSaveStatus('Salvo local · Drive pendente', 'warn');
+          }
         }
       };
       if ('requestIdleCallback' in window) folderSaveIdle = requestIdleCallback(run, { timeout: 2400 });
@@ -340,6 +365,7 @@ let STATE = null;
         googleSaveIdle = null;
         try {
           if (!window.GoogleDriveClinic?.isConfigured()) { setCloudSyncStatus('disconnected'); return; }
+          if (window.AppLifecycle && !window.AppLifecycle.canWrite()) { setCloudSyncStatus('failed', 'Não sincronizado com o Google'); return; }
           setCloudSyncStatus('syncing','Sincronizando com o Google');
           await GoogleDriveClinic.save(STATE);
           setCloudSyncStatus('synced','Sincronizado com o Google');
@@ -347,7 +373,18 @@ let STATE = null;
         } catch (error) {
           console.warn('[Amanda Clínica] Autosave do Google Drive falhou:', error);
           setCloudSyncStatus('failed','Não sincronizado com o Google');
-          updateSaveStatus('Salvo local · Google pendente', 'warn');
+          if (error?.code === 'SUSPICIOUS_WRITE') {
+            updateSaveStatus('Salvamento bloqueado por segurança', 'warn');
+            toast(error.message, 'error');
+          } else if (error?.code === 'STALE_REVISION') {
+            updateSaveStatus('Google Drive foi atualizado em outro lugar', 'warn');
+            toast('Outro dispositivo ou aba salvou antes. Use "Sincronizar com o Google" para carregar a versão mais recente antes de continuar editando.', 'warn');
+          } else if (error?.code === 'WORKSPACE_MISMATCH') {
+            updateSaveStatus('Pasta do Google Drive incorreta', 'warn');
+            toast(error.message, 'error');
+          } else {
+            updateSaveStatus('Salvo local · Google pendente', 'warn');
+          }
         }
       };
       if ('requestIdleCallback' in window) googleSaveIdle = requestIdleCallback(run, { timeout: 3000 });

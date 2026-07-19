@@ -214,6 +214,29 @@
     if (!(await ensurePermission(handle, options.requestPermission === true))) {
       throw new Error('Clique em “Sincronizar agora” para autorizar novamente a pasta.');
     }
+    // V1.20.0 — mesma proteção do Google Drive: antes de sobrescrever o
+    // arquivo principal da pasta, compara a contagem de registros com o que
+    // já está lá. Sem isso, esta pasta tinha exatamente o mesmo risco que o
+    // Drive tinha antes da correção (base vazia sobrescrevendo uma cheia).
+    if (!options.skipSuspiciousCheck && window.DataGuard) {
+      try {
+        const existing = await readJsonFile(handle, DATA_FILE);
+        if (window.DataGuard.isValidClinicSchema(existing)) {
+          const nextCounts = window.DataGuard.collectRecordCounts(state);
+          const existingCounts = window.DataGuard.collectRecordCounts(existing);
+          const check = window.DataGuard.detectSuspiciousDrop(nextCounts, existingCounts);
+          if (check.suspicious) {
+            const error = new Error(`Salvamento na pasta bloqueado por segurança: ${window.DataGuard.describeSuspiciousReasons(check.reasons)}. Nada foi substituído.`);
+            error.code = 'SUSPICIOUS_WRITE';
+            throw error;
+          }
+        }
+      } catch (error) {
+        if (error?.code === 'SUSPICIOUS_WRITE') throw error;
+        // Arquivo ainda não existe ou não pôde ser lido (primeira sincronização,
+        // por exemplo) — segue para gravar normalmente.
+      }
+    }
     const payload = JSON.stringify(state, null, 2);
     await writeTextFile(handle, DATA_FILE, payload);
     if (options.backup) {

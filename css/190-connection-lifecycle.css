@@ -1,0 +1,83 @@
+/**
+ * Amanda Estética V1.20.0 — Tela de conexão/inicialização.
+ * Ver js/core/10-connection-lifecycle.js. Enquanto esta tela estiver visível,
+ * nenhum dado da clínica é exibido nem editável.
+ */
+.conn-shell{
+  position:relative;
+  width:100%;
+  min-height:100dvh;
+  display:grid;
+  place-items:center;
+  padding:clamp(20px,5vw,60px);
+}
+.conn-card{
+  position:relative;
+  z-index:1;
+  width:min(420px,100%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  gap:14px;
+  padding:clamp(28px,5vw,40px) clamp(22px,4vw,34px);
+  border-radius:26px;
+  background:var(--surface-soft);
+  backdrop-filter:var(--glass-blur);
+  -webkit-backdrop-filter:var(--glass-blur);
+  border:1px solid rgba(255,255,255,.6);
+  box-shadow:var(--shadow);
+}
+.conn-card-wide{ width:min(520px,100%); }
+.conn-card-danger{ border-color:rgba(194,85,102,.35); }
+.conn-brand{ display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+.conn-brand small{ color:var(--muted); font-weight:600; letter-spacing:.02em; }
+.conn-card h1{ font-size:1.28rem; line-height:1.3; margin:0; color:var(--ink); }
+.conn-card p{ margin:0; color:var(--muted); font-size:.96rem; line-height:1.5; }
+
+.conn-spinner{ display:flex; gap:7px; margin:6px 0 4px; }
+.conn-spinner span{
+  width:9px; height:9px; border-radius:50%;
+  background:var(--rose);
+  animation:conn-spinner-bounce 1.05s ease-in-out infinite;
+}
+.conn-spinner span:nth-child(2){ animation-delay:.14s; background:var(--gold); }
+.conn-spinner span:nth-child(3){ animation-delay:.28s; background:var(--rose-dark); }
+@keyframes conn-spinner-bounce{
+  0%,80%,100%{ transform:scale(.6); opacity:.5; }
+  40%{ transform:scale(1); opacity:1; }
+}
+@media (prefers-reduced-motion:reduce){
+  .conn-spinner span{ animation:none; opacity:.85; }
+}
+
+.conn-status-icon{
+  width:52px; height:52px; border-radius:18px;
+  display:grid; place-items:center;
+  margin-bottom:2px;
+}
+.conn-status-icon.warn{ background:rgba(187,130,64,.14); color:var(--warn); }
+.conn-status-icon.danger{ background:rgba(194,85,102,.14); color:var(--danger); }
+
+.conn-actions{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:8px; width:100%; }
+.conn-actions .btn{ flex:1 1 auto; min-width:150px; }
+
+.conn-cancel{ margin-top:4px; color:var(--muted); font-size:.86rem; }
+
+.conn-card .integrity-grid{ width:100%; margin-top:6px; }
+
+/* Modo somente leitura (ver "Ver dados salvos por último" na tela offline).
+   Nenhuma tela nova é bloqueada de propósito — quem realmente tentar editar
+   recebe o aviso claro do persist() — mas o FAB de adicionar some e uma
+   fita fixa deixa o estado óbvio o tempo todo. */
+body.read-only-mode::before{
+  content:"Somente leitura — sem conexão com o Google Drive";
+  position:fixed; top:0; left:0; right:0; z-index:9999;
+  padding:7px 14px; text-align:center;
+  font-size:.82rem; font-weight:600; letter-spacing:.01em;
+  color:#fff; background:linear-gradient(90deg,var(--warn),var(--rose-dark));
+  box-shadow:0 2px 10px rgba(0,0,0,.12);
+}
+body.read-only-mode .app-shell{ padding-top:34px; }
+body.read-only-mode .fab[data-draggable-fab]{ display:none!important; }
+

@@ -395,6 +395,7 @@ function renderFinance() {
         <button type="button" data-action="export-json"><span class="ios-setting-icon">${icon('download',18)}</span><span><strong>Exportar JSON</strong><small>Baixar uma cópia independente</small></span>${icon('chevron',18)}</button>
         <button type="button" data-action="import-json"><span class="ios-setting-icon">${icon('upload',18)}</span><span><strong>Importar JSON</strong><small>Cria backup preventivo antes de substituir a base</small></span>${icon('chevron',18)}</button>
         <button type="button" data-action="show-backups"><span class="ios-setting-icon">${icon('clock',18)}</span><span><strong>Backups locais</strong><small>Consultar e restaurar cópias deste dispositivo</small></span>${icon('chevron',18)}</button>
+        <button type="button" data-action="show-drive-backups"><span class="ios-setting-icon">${icon('folder',18)}</span><span><strong>Backups no Google Drive</strong><small>Consultar e restaurar cópias salvas na nuvem</small></span>${icon('chevron',18)}</button>
       </div>
     </section>`;
   }
