@@ -13,21 +13,21 @@ function makeFakeDrive() {
   function nextId(prefix) { counter += 1; return `${prefix}_${counter}`; }
 
   function metaOf(file) {
-    return { id: file.id, name: file.name, mimeType: file.mimeType, parents: file.parents, trashed: file.trashed, createdTime: file.createdTime, modifiedTime: file.modifiedTime, size: String(file.content ? file.content.length : 0) };
+    return { id: file.id, name: file.name, mimeType: file.mimeType, parents: file.parents, trashed: file.trashed, createdTime: file.createdTime, modifiedTime: file.modifiedTime, size: String(file.content ? file.content.length : 0), appProperties: file.appProperties || {} };
   }
 
   function createFolder(name, parents) {
     const id = nextId('folder');
     const now = new Date().toISOString();
-    const file = { id, name, mimeType: 'application/vnd.google-apps.folder', parents, trashed: false, createdTime: now, modifiedTime: now, content: null };
+    const file = { id, name, mimeType: 'application/vnd.google-apps.folder', parents, trashed: false, createdTime: now, modifiedTime: now, content: null, appProperties: {} };
     files.set(id, file);
     return file;
   }
 
-  function createFile(name, parents, mimeType, content) {
+  function createFile(name, parents, mimeType, content, appProperties) {
     const id = nextId('file');
     const now = new Date().toISOString();
-    const file = { id, name, mimeType, parents, trashed: false, createdTime: now, modifiedTime: now, content };
+    const file = { id, name, mimeType, parents, trashed: false, createdTime: now, modifiedTime: now, content, appProperties: appProperties || {} };
     files.set(id, file);
     return file;
   }
@@ -42,6 +42,18 @@ function makeFakeDrive() {
   // chamada de fetch cujo padrão bata falha com o erro/atraso indicado.
   let networkFault = null;
   function setNetworkFault(fault) { networkFault = fault; }
+
+  function parseMultipart(init) {
+    const boundary = String(init.headers['Content-Type'] || init.headers['content-type']).split('boundary=')[1];
+    const raw = init.body;
+    const parts = raw.split(`--${boundary}`).filter(p => p.trim() && p.trim() !== '--');
+    const metaPart = parts[0];
+    const contentPart = parts[1];
+    const metaJsonText = metaPart.slice(metaPart.indexOf('{'), metaPart.lastIndexOf('}') + 1);
+    const metadata = JSON.parse(metaJsonText);
+    const content = contentPart ? contentPart.slice(contentPart.indexOf('{'), contentPart.lastIndexOf('}') + 1) : undefined;
+    return { metadata, content };
+  }
 
   async function fakeFetch(url, init = {}) {
     if (networkFault && networkFault.match(url, init)) {
@@ -79,24 +91,26 @@ function makeFakeDrive() {
 
     // POST /upload/drive/v3/files?uploadType=multipart  (criar arquivo com conteúdo)
     if (u.pathname === '/upload/drive/v3/files' && method === 'POST') {
-      const boundary = String(init.headers['Content-Type'] || init.headers['content-type']).split('boundary=')[1];
-      const raw = init.body;
-      const parts = raw.split(`--${boundary}`).filter(p => p.trim() && p.trim() !== '--');
-      const metaPart = parts[0];
-      const contentPart = parts[1];
-      const metaJsonText = metaPart.slice(metaPart.indexOf('{'), metaPart.lastIndexOf('}') + 1);
-      const metadata = JSON.parse(metaJsonText);
-      const contentText = contentPart.slice(contentPart.indexOf('{'), contentPart.lastIndexOf('}') + 1);
-      const file = createFile(metadata.name, metadata.parents || [], metadata.mimeType, contentText);
+      const { metadata, content } = parseMultipart(init);
+      const file = createFile(metadata.name, metadata.parents || [], metadata.mimeType, content, metadata.appProperties);
       return { ok: true, json: async () => metaOf(file) };
     }
 
-    // PATCH /upload/drive/v3/files/{id}?uploadType=media  (atualizar conteúdo)
+    // PATCH /upload/drive/v3/files/{id}  (atualizar conteúdo e/ou metadados —
+    // uploadType=media manda só o conteúdo; uploadType=multipart manda os
+    // dois juntos numa única requisição, igual ao create)
     const patchMatch = u.pathname.match(/^\/upload\/drive\/v3\/files\/([^/]+)$/);
     if (patchMatch && method === 'PATCH') {
       const file = files.get(patchMatch[1]);
       if (!file) return { ok: false, status: 404, json: async () => ({ error: 'not found' }) };
-      file.content = init.body;
+      const uploadType = u.searchParams.get('uploadType');
+      if (uploadType === 'multipart') {
+        const { metadata, content } = parseMultipart(init);
+        if (metadata.appProperties) file.appProperties = { ...(file.appProperties || {}), ...metadata.appProperties };
+        if (content !== undefined) file.content = content;
+      } else {
+        file.content = init.body;
+      }
       file.modifiedTime = new Date().toISOString();
       return { ok: true, json: async () => metaOf(file) };
     }

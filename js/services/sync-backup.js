@@ -21,7 +21,7 @@ async function manualSave() {
 
       if(window.GoogleDriveClinic?.isConfigured?.()){
         try{
-          await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual'});
+          await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual',thorough:true});
           saved.push('Google Drive');
           setCloudSyncStatus('synced','Sincronizado com o Google');
         }catch(error){setCloudSyncStatus('failed','Não sincronizado com o Google');failures.push(`Google Drive: ${error.message}`);}

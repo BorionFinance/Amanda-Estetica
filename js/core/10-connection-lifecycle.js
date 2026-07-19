@@ -203,7 +203,7 @@ async function establishAuthoritativeSession(options = {}) {
       data();
       await runIntegrityAudit({ repair: true, save: false });
       recordCloudAuthoritativeMigrationOnce();
-      const created = await window.GoogleDriveClinic.saveAuthoritative(STATE, { allowCreate: true, interactive, reason: 'primeira-conexao', alsoBackupNewContent: true });
+      const created = await window.GoogleDriveClinic.saveAuthoritative(STATE, { allowCreate: true, interactive, thorough: true, reason: 'primeira-conexao', alsoBackupNewContent: true });
       if (!stillCurrent()) return { ok: false, cancelled: true };
       lc.markRemoteLoaded(created.revision, created.workspaceId);
       lc.markRemoteValidated();

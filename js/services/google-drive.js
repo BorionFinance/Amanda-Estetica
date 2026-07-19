@@ -76,6 +76,35 @@
     return `ws_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
   }
 
+  /* V1.20.1 — PERFORMANCE: revisão/workspace/contagem também ficam gravados
+     como `appProperties` (metadados) no próprio arquivo do Drive, cada
+     coleção crítica como uma propriedade pequena e independente. Isso deixa
+     a checagem de segurança (revisão + contagem suspeita) possível com uma
+     única chamada de METADADOS — sem baixar o conteúdo inteiro (que inclui
+     todas as fotos em base64 e pode ter vários MB). O conteúdo completo só
+     é baixado quando é realmente preciso (abrir a base, ou tirar um
+     snapshot numa gravação "cuidadosa"). */
+  function encodeCountsToProps(counts) {
+    const props = {};
+    (window.DataGuard?.CRITICAL_COLLECTIONS || []).forEach(key => { props[`c_${key}`] = String(counts?.[key] || 0); });
+    return props;
+  }
+  function decodeCountsFromProps(props) {
+    if (!props) return null;
+    const collections = window.DataGuard?.CRITICAL_COLLECTIONS || [];
+    const counts = {};
+    let total = 0;
+    for (const key of collections) {
+      const raw = props[`c_${key}`];
+      if (raw === undefined) return null; // propriedades incompletas (arquivo antigo) -> não confiar, cai no fallback completo
+      const n = Number(raw) || 0;
+      counts[key] = n;
+      total += n;
+    }
+    counts.__total = total;
+    return counts;
+  }
+
   const resolvedFolders = new Map();
   const resolvedIntegrationFiles = new Map();
   const folderInflight = new Map();
@@ -421,7 +450,7 @@
     return await promise;
   }
 
-  async function saveDataFile(folderId, state) {
+  async function saveDataFile(folderId, state, appProperties = null) {
     return await withCrossTabLock(`amanda-drive-main-file-save:${folderId}`, async () => {
       let file = await resolveDataFileUncached(folderId);
       if (!file) {
@@ -431,7 +460,7 @@
           if (file) break;
         }
       }
-      file = file ? await updateJsonFile(file.id, state) : await createJsonFile(folderId, DATA_FILE, state);
+      file = file ? await updateJsonFileWithMeta(file.id, state, appProperties) : await createJsonFile(folderId, DATA_FILE, state, appProperties);
       return rememberDataFile(folderId, file);
     });
   }
@@ -487,9 +516,11 @@
     return await response.json();
   }
 
-  async function createJsonFile(parentId, name, object) {
+  async function createJsonFile(parentId, name, object, appProperties = null) {
     const boundary = `amanda_${Date.now()}`;
-    const metadata = JSON.stringify({ name, parents: [parentId], mimeType: 'application/json' });
+    const metadataObj = { name, parents: [parentId], mimeType: 'application/json' };
+    if (appProperties) metadataObj.appProperties = appProperties;
+    const metadata = JSON.stringify(metadataObj);
     const content = JSON.stringify(object, null, 2);
     const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
     const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,size', {
@@ -511,6 +542,25 @@
     return await response.json();
   }
 
+  /* V1.20.1 — atualiza conteúdo E appProperties numa ÚNICA requisição
+     (multipart), em vez de precisar de uma chamada extra só para gravar os
+     metadados. Usado no salvamento do arquivo principal, que é o caminho
+     mais frequente e onde uma requisição a mais realmente importa. */
+  async function updateJsonFileWithMeta(fileId, object, appProperties = null) {
+    if (!appProperties) return await updateJsonFile(fileId, object);
+    const boundary = `amanda_${Date.now()}`;
+    const metadata = JSON.stringify({ appProperties });
+    const content = JSON.stringify(object, null, 2);
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&fields=id,name,modifiedTime,size`, {
+      method: 'PATCH',
+      headers: { ...(await headers()), 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!response.ok) throw new Error('Falha ao salvar os dados no Google Drive.');
+    return await response.json();
+  }
+
   async function readJsonFile(fileId) {
     const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
       headers: await headers()
@@ -524,6 +574,20 @@
       headers: await headers()
     });
     if (!response.ok) throw new Error('Falha ao consultar o arquivo do Google Drive.');
+    return await response.json();
+  }
+
+  /* V1.20.1 — leitura SÓ de metadados (com appProperties), sem baixar o
+     conteúdo. É a base da checagem rápida de revisão/contagem. */
+  async function getFileMetaWithProps(fileId) {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,parents,trashed,createdTime,modifiedTime,size,appProperties`, {
+      headers: await headers()
+    });
+    if (!response.ok) {
+      const error = new Error('Falha ao consultar o arquivo do Google Drive.');
+      error.status = response.status;
+      throw error;
+    }
     return await response.json();
   }
 
@@ -611,14 +675,35 @@
   }
 
   /* ----------------------------------------------------------------
-     Leitura "oficial" do arquivo principal: sempre busca o conteúdo mais
-     recente do Drive (nunca confia em cache de memória para essa decisão),
-     valida o formato mínimo esperado e devolve também a contagem de
-     registros e a revisão, para quem chamou decidir o que fazer.
+     Leitura "oficial" do arquivo principal.
+     V1.20.1 — por padrão, tenta primeiro só os METADADOS (appProperties:
+     revisão, workspace e contagem por coleção). Isso evita baixar o
+     conteúdo inteiro (que inclui todas as fotos em base64, podendo ter
+     vários MB) só para conferir se é seguro gravar. O conteúdo completo
+     só é buscado quando `forceFullContent` é pedido (abrir a base de
+     verdade) ou quando o arquivo é antigo e ainda não tem as propriedades
+     (compatibilidade com bases salvas antes desta otimização).
      ---------------------------------------------------------------- */
-  async function readRemoteAuthoritative(folderId) {
+  async function readRemoteAuthoritative(folderId, options = {}) {
     const file = await resolveDataFile(folderId);
-    if (!file) return { exists: false, state: null, meta: null, revision: 0, workspaceId: null, counts: null };
+    if (!file) return { exists: false, state: null, meta: null, revision: 0, workspaceId: null, counts: null, source: 'none' };
+
+    if (!options.forceFullContent) {
+      try {
+        const meta = await getFileMetaWithProps(file.id);
+        const counts = decodeCountsFromProps(meta.appProperties);
+        const revision = meta.appProperties?.rev !== undefined ? Number(meta.appProperties.rev) : null;
+        const workspaceId = meta.appProperties?.wsid || null;
+        if (counts && revision !== null && workspaceId) {
+          return { exists: true, state: null, meta: file, revision, workspaceId, counts, source: 'metadata' };
+        }
+      } catch (error) {
+        console.warn('[GOOGLE_DRIVE] Checagem rápida por metadados falhou; usando leitura completa como reserva:', error);
+      }
+    }
+
+    // Arquivo ainda sem appProperties (salvo antes desta versão) ou leitura
+    // completa pedida de propósito — busca o conteúdo inteiro mesmo.
     const state = await readJsonFile(file.id);
     if (!window.DataGuard?.isValidClinicSchema(state)) {
       throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'O arquivo principal da clínica no Google Drive não tem o formato esperado. Nada foi alterado.', { file });
@@ -629,18 +714,19 @@
       meta: file,
       revision: Number(state.databaseRevision) || 0,
       workspaceId: state.workspaceId || null,
-      counts: window.DataGuard.collectRecordCounts(state)
+      counts: window.DataGuard.collectRecordCounts(state),
+      source: 'content'
     };
   }
 
   /* ----------------------------------------------------------------
-     Carregamento autoritativo usado no boot e no login: autentica,
-     resolve a pasta, lê o arquivo principal e valida o schema. Não grava
-     nada — só leitura. Quem chama registra o resultado no AppLifecycle.
+     Carregamento autoritativo usado no boot e no login: sempre busca o
+     CONTEÚDO completo (precisa dele para colocar em STATE) — aqui não tem
+     atalho por metadados, isso só se aplica à checagem antes de gravar.
      ---------------------------------------------------------------- */
   async function loadAuthoritative(options = {}) {
     const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
-    const remote = await readRemoteAuthoritative(folderId);
+    const remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
     if (remote.exists) writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
     return { ...remote, folderId };
   }
@@ -656,10 +742,14 @@
        4) reler o que foi gravado para confirmar revisão e hash.
      ---------------------------------------------------------------- */
   async function saveAuthoritative(state, options = {}) {
-    const { allowCreate = false, expectedRevision = null, skipSuspiciousCheck = false, reason = 'salvamento', backupSlot = null } = options;
+    const { allowCreate = false, expectedRevision = null, skipSuspiciousCheck = false, thorough = false, backupSlot = null } = options;
     const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
 
     return await withCrossTabLock(`amanda-drive-authoritative-save:${folderId}`, async () => {
+      // V1.20.1 — checagem rápida (só metadados na imensa maioria das vezes,
+      // ver readRemoteAuthoritative). Isso é o que faz o autosave não
+      // precisar mais baixar a base inteira (com todas as fotos) só para
+      // saber se é seguro gravar.
       const remote = await readRemoteAuthoritative(folderId);
 
       if (!remote.exists && !allowCreate) {
@@ -669,7 +759,7 @@
       if (remote.exists) {
         if (expectedRevision !== null && expectedRevision !== undefined && remote.revision !== expectedRevision) {
           throw new DriveGuardError('STALE_REVISION', 'O Google Drive foi atualizado por outro dispositivo ou aba desde que esta sessão carregou os dados. Nada foi substituído — recarregue antes de salvar de novo.', {
-            expectedRevision, remoteRevision: remote.revision, remoteState: remote.state, remoteCounts: remote.counts
+            expectedRevision, remoteRevision: remote.revision, remoteCounts: remote.counts
           });
         }
         if (state.workspaceId && remote.workspaceId && state.workspaceId !== remote.workspaceId) {
@@ -688,10 +778,16 @@
         }
       }
 
-      // Snapshot do conteúdo anterior ANTES de sobrescrever — só existe algo
-      // para guardar quando já havia um arquivo principal.
-      if (remote.exists) {
-        try { await writeRotatingSnapshot(folderId, backupSlot || 'prewrite', PRESAVE_SNAPSHOT_SLOTS, remote.state); }
+      // Snapshot do conteúdo anterior — só em gravações "cuidadosas"
+      // (explícitas: salvar agora, conectar, sincronizar, restaurar). No
+      // autosave de rotina isso é pulado de propósito: baixar o conteúdo
+      // inteiro só para copiá-lo de novo, a cada edição, era o principal
+      // motivo de uma foto demorar 1-2 minutos para sincronizar. O rodízio
+      // de 60s (autosave-N.json) continua funcionando por conta própria
+      // como rede de segurança entre uma gravação cuidadosa e outra.
+      if (remote.exists && thorough) {
+        const oldContent = remote.state || await readJsonFile(remote.meta.id);
+        try { await writeRotatingSnapshot(folderId, backupSlot || 'prewrite', PRESAVE_SNAPSHOT_SLOTS, oldContent); }
         catch (error) { console.warn('[GoogleDriveClinic] Não foi possível criar o snapshot de segurança antes de gravar (a gravação continua):', error); }
       }
 
@@ -700,16 +796,22 @@
       const nextCounts = window.DataGuard.collectRecordCounts(state);
       const payload = { ...state, workspaceId, databaseRevision: nextRevision, recordCounts: nextCounts };
       payload.dataHash = await window.DataGuard.stateContentHash(payload);
+      // As mesmas informações também vão como appProperties (metadados),
+      // gravadas na MESMA requisição do conteúdo — é isso que permite a
+      // próxima checagem ser só de metadados também.
+      const appProperties = { rev: String(nextRevision), wsid: workspaceId, ...encodeCountsToProps(nextCounts) };
 
-      const file = await saveDataFile(folderId, payload);
+      const file = await saveDataFile(folderId, payload, appProperties);
       writeStoredWorkspaceId(folderId, workspaceId);
 
-      // Relê o que acabou de ser gravado para confirmar que a revisão e o
-      // hash batem — proteção extra contra respostas parciais/corrompidas
-      // da própria API do Drive.
-      const verify = await readJsonFile(file.id);
-      if (Number(verify.databaseRevision) !== nextRevision) {
-        throw new DriveGuardError('VERIFY_FAILED', 'O Google Drive confirmou a gravação, mas o conteúdo relido não bate com o que foi enviado. Verifique a conexão e tente novamente.', { expected: nextRevision, got: verify.databaseRevision });
+      // Reler para confirmar só acontece em gravações "cuidadosas" — no
+      // autosave de rotina, a própria resposta 200 do upload já é a
+      // confirmação de que o Drive aceitou os bytes.
+      if (thorough) {
+        const verify = await readJsonFile(file.id);
+        if (Number(verify.databaseRevision) !== nextRevision) {
+          throw new DriveGuardError('VERIFY_FAILED', 'O Google Drive confirmou a gravação, mas o conteúdo relido não bate com o que foi enviado. Verifique a conexão e tente novamente.', { expected: nextRevision, got: verify.databaseRevision });
+        }
       }
 
       // Cópia extra opcional no rodízio "forcesave" (mesmo papel de antes:
@@ -774,6 +876,7 @@
       interactive: options.interactive === true,
       expectedRevision: options.expectedRevision,
       skipSuspiciousCheck: true,
+      thorough: true,
       reason: 'restauracao-snapshot-drive',
       alsoBackupNewContent: true
     });
@@ -885,7 +988,7 @@
         allowCreate: options.allowCreate === true,
         expectedRevision: options.expectedRevision !== undefined ? options.expectedRevision : (window.AppLifecycle ? window.AppLifecycle.getRevision() : null),
         skipSuspiciousCheck: options.skipSuspiciousCheck === true,
-        reason: options.reason,
+        thorough: options.thorough === true,
         alsoBackupNewContent: options.backup === true
       });
       if (window.AppLifecycle) {
@@ -915,7 +1018,7 @@
       const remote = await loadAuthoritative({ interactive: options.interactive === true });
       if (!remote.exists) {
         const result = await saveAuthoritative(state, {
-          interactive: options.interactive === true, allowCreate: true,
+          interactive: options.interactive === true, allowCreate: true, thorough: true,
           reason: options.reason || 'primeira-sincronizacao', alsoBackupNewContent: true
         });
         if (window.AppLifecycle) { window.AppLifecycle.setRevision(result.revision); window.AppLifecycle.setWorkspaceId(result.workspaceId); window.AppLifecycle.setLastKnownGoodCounts(result.counts); }
@@ -926,7 +1029,7 @@
         return { direction: 'remote', state: remote.state, meta: remote.meta, revision: remote.revision, counts: remote.counts };
       }
       const result = await saveAuthoritative(state, {
-        interactive: options.interactive === true, expectedRevision: remote.revision,
+        interactive: options.interactive === true, expectedRevision: remote.revision, thorough: true,
         reason: options.reason || 'sincronizacao', alsoBackupNewContent: options.backup === true
       });
       if (window.AppLifecycle) { window.AppLifecycle.setRevision(result.revision); window.AppLifecycle.setWorkspaceId(result.workspaceId); window.AppLifecycle.setLastKnownGoodCounts(result.counts); }

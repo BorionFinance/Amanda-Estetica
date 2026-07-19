@@ -133,17 +133,58 @@ test('gravação legítima com queda pequena (exclusão manual) é permitida', a
   assert.equal(sandbox.AppLifecycle.getRevision(), 2);
 });
 
-test('gravação bem sucedida cria um snapshot do conteúdo anterior antes de sobrescrever', async () => {
+test('gravação THOROUGH (explícita) cria um snapshot do conteúdo anterior antes de sobrescrever', async () => {
   const { drive, sandbox } = setupConnectedSandbox();
   const state = clinicState({ clients: 3 });
-  await sandbox.GoogleDriveClinic.sync(state, {});
+  await sandbox.GoogleDriveClinic.sync(state, {}); // sync() já é thorough internamente
   const nextState = clinicState({ clients: 4 });
-  await sandbox.GoogleDriveClinic.save(nextState, { expectedRevision: sandbox.AppLifecycle.getRevision() });
+  await sandbox.GoogleDriveClinic.save(nextState, { expectedRevision: sandbox.AppLifecycle.getRevision(), thorough: true });
 
   const snapshotFiles = [...drive.files.values()].filter(f => f.name.startsWith('prewrite-'));
   assert.ok(snapshotFiles.length >= 1, 'deveria existir ao menos um snapshot prewrite');
   const snapshotContent = JSON.parse(snapshotFiles[0].content);
   assert.equal(snapshotContent.dataByProfile.amanda.clients.length, 3, 'o snapshot deve conter a versão ANTERIOR (3 clientes), não a nova (4)');
+});
+
+test('gravação de ROTINA (autosave, sem thorough) NÃO baixa o conteúdo inteiro nem tira snapshot — é o que faz o autosave ser rápido mesmo com fotos grandes', async () => {
+  const { drive, sandbox } = setupConnectedSandbox();
+  const state = clinicState({ clients: 3 });
+  await sandbox.GoogleDriveClinic.sync(state, {}); // cria a base (thorough, uma vez só)
+
+  let mediaReadsDuringRoutineSave = 0;
+  const originalFetch = drive.fetch;
+  const wrappedFetch = async (url, init) => {
+    if (String(url).includes('alt=media')) mediaReadsDuringRoutineSave += 1;
+    return await originalFetch(url, init);
+  };
+  sandbox.fetch = wrappedFetch;
+
+  const nextState = clinicState({ clients: 4 });
+  await sandbox.GoogleDriveClinic.save(nextState, { expectedRevision: sandbox.AppLifecycle.getRevision() }); // sem thorough
+
+  assert.equal(mediaReadsDuringRoutineSave, 0, 'uma gravação de rotina não deveria baixar o conteúdo completo do arquivo em nenhum momento');
+  const snapshotFiles = [...drive.files.values()].filter(f => f.name.startsWith('prewrite-'));
+  assert.equal(snapshotFiles.length, 0, 'gravação de rotina não deveria criar snapshot prewrite (fica só nas gravações explícitas)');
+
+  // mas a gravação em si tem que ter acontecido de verdade
+  const reread = await sandbox.GoogleDriveClinic.load({});
+  assert.equal(reread.counts.clients, 4);
+  assert.equal(reread.revision, 2);
+});
+
+test('a checagem de segurança (revisão + contagem suspeita) continua funcionando mesmo sem thorough, só que via metadados', async () => {
+  const { sandbox } = setupConnectedSandbox();
+  const populated = clinicState({ clients: 120, appointments: 840 });
+  await sandbox.GoogleDriveClinic.sync(populated, {});
+
+  // sessão nova, sem revisão conhecida — mesmo em uma gravação de rotina
+  // (sem thorough), uma base vazia não pode passar por cima.
+  sandbox.AppLifecycle = sandbox.AppLifecycleFactory.createLifecycle();
+  const emptySeed = clinicState({});
+  await assert.rejects(
+    () => sandbox.GoogleDriveClinic.save(emptySeed, {}),
+    (error) => { assert.equal(error.code, 'SUSPICIOUS_WRITE'); return true; }
+  );
 });
 
 test('gravação sem conexão nunca chega a acontecer (fetch falha -> nada é escrito)', async () => {
