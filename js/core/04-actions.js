@@ -22,7 +22,7 @@ async function handleAction(action, el) {
       'confirm-recovery-continue':()=>resolveRecoveryDecision(true),
       'show-login-help':()=>showLoginHelpModal(),
       'reset-device-state':()=>confirmResetAmandaDeviceState(),
-      'lock-app':()=>{GoogleDriveClinic?.stopAutosaveLoop?.();sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
+      'lock-app':()=>{GoogleDriveClinic?.stopAutosaveLoop?.();GoogleDriveClinic?.stopLivePollLoop?.();sessionStorage.removeItem('amanda_clinica_unlocked');sessionStorage.removeItem('amanda_clinica_auth_mode');sessionStorage.removeItem('amanda_clinica_auth_email');swapScreen({currentSelector:'.app-shell',exitClass:'screen-exit-right',enterClass:'screen-enter-left',renderNext:renderLogin});},
       'create-profile':()=>openProfileForm(null),
       'profile-menu':()=>{resetSettingsSection();if(CURRENT_VIEW==='settings')renderView('page-enter-soft');else navTo('settings');},
       'edit-profile':()=>openProfileForm(activeProfile()),

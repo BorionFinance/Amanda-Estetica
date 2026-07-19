@@ -265,6 +265,7 @@ function finalizeSessionReady() {
   if (lc.get() !== 'READY') lc.set('READY');
   if (window.GoogleDriveClinic?.isConfigured?.()) {
     window.GoogleDriveClinic.startAutosaveLoop(() => STATE);
+    window.GoogleDriveClinic.startLivePollLoop();
   }
   if (window.AmandaBorionInterop && !BORION_INTEROP_STARTED) {
     BORION_INTEROP_STARTED = true;

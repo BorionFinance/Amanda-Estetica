@@ -134,14 +134,76 @@ function openAnamnesisForm(id='',prefill={}) {
     w.document.close();
   }
 
-  async function readImageFull(file) {
+  async function readImageFull(file, onProgress) {
     if (!file) return '';
     if (!file.type.startsWith('image/')) throw new Error('Selecione um arquivo de imagem.');
     return await new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onprogress = event => {
+        if (typeof onProgress === 'function' && event.lengthComputable) onProgress(event.loaded / event.total);
+      };
       reader.onload = () => resolve(reader.result);
       reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
       reader.readAsDataURL(file);
+    });
+  }
+
+  /* V1.21.0 — pedido: fotos demoram mais para sincronizar que o resto do app
+     (qualidade original, sem compressão) — por isso, só para elas, mostra um
+     indicador visual visível enquanto o envio ao Google Drive não termina.
+     Não bloqueia a tela nem impede continuar usando o app; só deixa claro
+     que ainda está enviando, para a pessoa saber que ainda não é hora de
+     fechar o aplicativo. Para o resto (cliente, protocolo, agenda,
+     atendimento, produto, financeiro) o salvamento continua silencioso e
+     em segundo plano, como já era. */
+  function showPhotoUploadProgress(initialLabel) {
+    document.getElementById('photo-upload-pill')?.remove();
+    const el = document.createElement('div');
+    el.id = 'photo-upload-pill';
+    el.className = 'photo-upload-pill';
+    el.innerHTML = `<div class="photo-upload-icon">${icon('image', 16)}</div><div class="photo-upload-copy"><strong>${esc(initialLabel || 'Enviando foto…')}</strong><div class="photo-upload-bar"><span></span></div></div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    return {
+      setLabel(label) { const strong = el.querySelector('strong'); if (strong) strong.textContent = label; },
+      setDeterminateProgress(ratio) {
+        const bar = el.querySelector('.photo-upload-bar');
+        const span = el.querySelector('.photo-upload-bar span');
+        if (!bar || !span) return;
+        bar.classList.add('is-determinate');
+        span.style.width = `${Math.max(2, Math.min(100, ratio * 100))}%`;
+      },
+      setIndeterminate() {
+        const bar = el.querySelector('.photo-upload-bar');
+        if (bar) bar.classList.remove('is-determinate');
+      },
+      done(success, label) {
+        el.classList.toggle('is-success', success);
+        el.classList.toggle('is-error', !success);
+        el.classList.add('is-done');
+        const strong = el.querySelector('strong'); if (strong) strong.textContent = label;
+        setTimeout(() => {
+          el.classList.remove('show');
+          setTimeout(() => el.remove(), 320);
+        }, success ? 1800 : 3600);
+      },
+      remove() { el.remove(); }
+    };
+  }
+
+  /* Só observa o salvamento no Google Drive que persist() já agendou (não
+     dispara uma gravação extra) até ele terminar — usado para saber quando
+     esconder/atualizar o indicador de envio da foto. */
+  function waitForGoogleDriveSaveToSettle() {
+    return new Promise(resolve => {
+      const check = () => {
+        if (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave()) {
+          setTimeout(check, 250);
+        } else {
+          resolve();
+        }
+      };
+      setTimeout(check, 80);
     });
   }
 
@@ -172,12 +234,29 @@ function openAnamnesisForm(id='',prefill={}) {
         if(o.area==='__new__')throw new Error('Termine de cadastrar a área tratada nova (ou cancele) antes de salvar.');
         const file=form.elements.imageFile.files[0];
         let imageData=p.imageData||'';
-        if(file){updateSaveStatus('Salvando foto em qualidade original…','warn');imageData=await readImageFull(file);}
+        let progress=null;
+        if(file){
+          progress=showPhotoUploadProgress('Lendo a imagem…');
+          progress.setDeterminateProgress(0);
+          updateSaveStatus('Salvando foto em qualidade original…','warn');
+          imageData=await readImageFull(file,ratio=>progress.setDeterminateProgress(ratio*0.4));
+        }
         const item={...p,id:o.id||uid('FT'),clientId:o.clientId,clientName:client?.name||'',protocolId:o.protocolId||'',protocolName:protocol?.name||'',date:o.date,phase:o.phase,area:o.area||'',url:o.url||'',imageData,result:o.result||'',notes:o.notes||'',authorization:bool(o.authorization),updatedAt:nowIso()};
         const idx=data().photos.findIndex(x=>x.id===item.id);
         idx>=0?data().photos.splice(idx,1,item):data().photos.push(item);
         await persist(existing?'Foto editada':'Foto registrada',{detail:`${item.clientName} · ${item.phase}`});
         closeModal();renderView();toast('Foto salva.');
+        if(file){
+          if(window.GoogleDriveClinic?.isConfigured?.()){
+            progress.setLabel('Enviando foto para o Google Drive…');
+            progress.setIndeterminate();
+            await waitForGoogleDriveSaveToSettle();
+            const ok=cloudSyncSnapshot().state==='synced';
+            progress.done(ok, ok?'Foto enviada ao Google Drive.':'Ainda não deu para enviar — vai tentar de novo sozinho em instantes. Pode continuar usando o app.');
+          }else{
+            progress.done(true,'Foto salva neste dispositivo.');
+          }
+        }
       }
     });
     const form=$('#app-modal-form');

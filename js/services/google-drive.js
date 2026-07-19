@@ -118,6 +118,33 @@
   let autosaveInFlight = false;
   let autosaveStateGetter = null;
 
+  /* V1.21.0 — "atualização ao vivo" entre dispositivos, mesma ideia que foi
+     construída para o Borion Finance: a cada LIVE_POLL_INTERVAL_MS, se este
+     dispositivo não tem nenhuma gravação local pendente, confere só a
+     REVISÃO (metadados, ver readRemoteAuthoritative) do arquivo principal.
+     Se mudou, é porque outro dispositivo salvou — busca o conteúdo completo
+     e atualiza a tela sozinho, sem precisar sair do app e entrar de novo. */
+  const LIVE_POLL_INTERVAL_MS = 6 * 1000;
+  let livePollTimer = null;
+  let liveCheckInFlight = false;
+
+  /* Nunca aplica uma atualização automática em cima de um modal, do diálogo de
+     confirmação, do seletor tipo roda (iOS) ou de um campo em edição — isso
+     poderia apagar o que a pessoa estava preenchendo. Se não for seguro agora,
+     a próxima checagem (poucos segundos depois) tenta de novo sozinha. */
+  function amandaLiveUpdateSafeToApplyNow() {
+    if (document.body.classList.contains('modal-open')) return false;
+    if (document.body.classList.contains('app-confirm-open')) return false;
+    if (document.querySelector('#picker-root .ios-wheel-sheet')) return false;
+    const active = document.activeElement;
+    if (active) {
+      const tag = (active.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+      if (active.isContentEditable) return false;
+    }
+    return true;
+  }
+
   // Ativado SOMENTE pelos testes automatizados em /tests (ver __test abaixo).
   // Nunca é ligado por nenhum caminho do próprio aplicativo em produção —
   // existe só para permitir testar o pipeline de gravação/leitura guardado
@@ -942,6 +969,68 @@
         autosaveInFlight = false;
       }
     },
+    /* V1.21.0 — inicia o "atualização ao vivo". Chamado junto do autosave, ao
+       ficar READY (ver finalizeSessionReady em 10-connection-lifecycle.js). */
+    startLivePollLoop() {
+      this.stopLivePollLoop();
+      if (!this.isConfigured()) return;
+      livePollTimer = setInterval(() => { this.checkForRemoteUpdate(); }, LIVE_POLL_INTERVAL_MS);
+    },
+    stopLivePollLoop() {
+      if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+    },
+
+    /* Só confere METADADOS (a mesma checagem barata que já existe para
+       decidir se é seguro gravar — ver readRemoteAuthoritative) — nenhum
+       conteúdo é baixado à toa. Só busca o conteúdo completo quando a
+       revisão realmente mudou. Nunca roda: sem sessão pronta (READY,
+       AppLifecycle.canWrite()); com uma gravação local ainda pendente
+       (window.hasPendingGoogleDriveSave — ver 01-state-utils.js); com a aba
+       em segundo plano; ou em cima de um modal/campo em edição (adia, não
+       descarta — a próxima checagem tenta de novo). */
+    async checkForRemoteUpdate() {
+      const lc = window.AppLifecycle;
+      if (!lc || !lc.canWrite()) return false;
+      if (!this.isConfigured()) return false;
+      if (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave()) return false;
+      if (typeof document !== 'undefined' && document.hidden) return false;
+      if (liveCheckInFlight) return false;
+      liveCheckInFlight = true;
+      try {
+        const { folderId } = await this.ensureConnection(false);
+        const remote = await readRemoteAuthoritative(folderId);
+        if (!remote.exists) return false;
+        const localRevision = lc.getRevision();
+        if (localRevision === null || localRevision === undefined) return false; // esta sessão ainda não carregou nenhuma revisão — não é papel do live-poll decidir isso
+        if (remote.revision === localRevision) return false; // nada novo
+
+        if (!amandaLiveUpdateSafeToApplyNow()) return false; // adia pro próximo tick
+
+        const full = await loadAuthoritative({ interactive: false });
+        if (!full.exists) return false;
+
+        STATE = full.state;
+        if (typeof data === 'function') data();
+        if (typeof runIntegrityAudit === 'function') await runIntegrityAudit({ repair: true, save: false });
+        if (window.ClinicStorage) await window.ClinicStorage.save(STATE);
+        lc.setRevision(full.revision);
+        lc.setWorkspaceId(full.workspaceId);
+        lc.setLastKnownGoodCounts(full.counts);
+        this.recordKnownGoodCounts(full.workspaceId, full.counts);
+
+        if (sessionStorage.getItem('amanda_clinica_unlocked') === '1' && typeof renderView === 'function') {
+          renderView();
+          if (typeof toast === 'function') toast('Atualizado com uma alteração feita em outro dispositivo.');
+        }
+        return true;
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] Checagem de atualização ao vivo falhou (tenta de novo em breve):', error);
+        return false;
+      } finally {
+        liveCheckInFlight = false;
+      }
+    },
+
     async authenticate(interactive = true) {
       return await authenticateGoogle(interactive);
     },
@@ -1057,6 +1146,7 @@
       if (user) localStorage.removeItem(folderKey(user.sub));
       this.currentFile = null;
       this.stopAutosaveLoop();
+      this.stopLivePollLoop();
       resolvedFolders.clear();
       resolvedIntegrationFiles.clear();
       integrationFileInflight.clear();
@@ -1092,4 +1182,16 @@
   };
 
   window.GoogleDriveClinic = GoogleDriveClinic;
+
+  /* V1.21.0 — além do poll de fundo, confere na hora quando a pessoa volta pro
+     app (troca de aba, tira do segundo plano no celular) — não precisa esperar
+     o próximo tick do timer pra já estar em dia. */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && GoogleDriveClinic.isConfigured()) {
+      GoogleDriveClinic.checkForRemoteUpdate();
+    }
+  });
+  window.addEventListener('focus', () => {
+    if (GoogleDriveClinic.isConfigured()) GoogleDriveClinic.checkForRemoteUpdate();
+  });
 })();

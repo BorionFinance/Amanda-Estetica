@@ -356,6 +356,16 @@ let STATE = null;
     }, 1500);
   }
 
+  // V1.21.0 — usado pelo "atualização ao vivo" (checkForRemoteUpdate, em
+  // google-drive.js) pra nunca substituir o STATE local enquanto existe uma
+  // gravação daqui pra fora ainda não resolvida (nem o timer do debounce,
+  // nem a chamada de rede em si).
+  let googleSaveInFlight = false;
+  function hasPendingGoogleDriveSave() {
+    return !!googleSaveTimer || googleSaveInFlight;
+  }
+  window.hasPendingGoogleDriveSave = hasPendingGoogleDriveSave;
+
   function scheduleGoogleDriveSave() {
     clearTimeout(googleSaveTimer);
     if (googleSaveIdle && 'cancelIdleCallback' in window) cancelIdleCallback(googleSaveIdle);
@@ -363,6 +373,8 @@ let STATE = null;
     googleSaveTimer = setTimeout(() => {
       const run = async () => {
         googleSaveIdle = null;
+        googleSaveTimer = 0;
+        googleSaveInFlight = true;
         try {
           if (!window.GoogleDriveClinic?.isConfigured()) { setCloudSyncStatus('disconnected'); return; }
           if (window.AppLifecycle && !window.AppLifecycle.canWrite()) { setCloudSyncStatus('failed', 'Não sincronizado com o Google'); return; }
@@ -385,6 +397,8 @@ let STATE = null;
           } else {
             updateSaveStatus('Salvo local · Google pendente', 'warn');
           }
+        } finally {
+          googleSaveInFlight = false;
         }
       };
       if ('requestIdleCallback' in window) googleSaveIdle = requestIdleCallback(run, { timeout: 3000 });

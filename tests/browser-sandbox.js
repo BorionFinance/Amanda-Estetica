@@ -25,10 +25,23 @@ function createSandbox({ fetchImpl }) {
   sandbox.TextEncoder = TextEncoder;
   sandbox.TextDecoder = TextDecoder;
   sandbox.fetch = fetchImpl;
+  sandbox.addEventListener = () => {};
+  const classSet = new Set();
   sandbox.document = {
+    hidden: false,
+    visibilityState: 'visible',
+    activeElement: null,
+    body: {
+      classList: {
+        contains: name => classSet.has(name),
+        add: name => classSet.add(name),
+        remove: name => classSet.delete(name)
+      }
+    },
     querySelector: () => null,
     createElement: () => ({ set src(_v) {}, addEventListener() {} }),
-    head: { appendChild() {} }
+    head: { appendChild() {} },
+    addEventListener: () => {}
   };
   sandbox.setTimeout = setTimeout;
   sandbox.clearTimeout = clearTimeout;
@@ -37,6 +50,17 @@ function createSandbox({ fetchImpl }) {
   sandbox.URLSearchParams = URLSearchParams;
   sandbox.URL = URL;
   sandbox.globalThis = sandbox;
+
+  // Stubs padrão usados pelo checkForRemoteUpdate() (atualização ao vivo) —
+  // testes que exercitam esse caminho sobrescrevem o que precisarem depois
+  // de createSandbox(); os demais testes nem tocam nisso.
+  sandbox.STATE = null;
+  sandbox.data = () => null;
+  sandbox.runIntegrityAudit = async () => ({});
+  sandbox.renderView = () => {};
+  sandbox.toast = () => {};
+  sandbox.ClinicStorage = { save: async () => true };
+  sandbox.hasPendingGoogleDriveSave = () => false;
 
   const context = vm.createContext(sandbox);
 
