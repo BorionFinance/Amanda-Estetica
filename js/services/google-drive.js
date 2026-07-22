@@ -8,7 +8,7 @@
     https://borionfinance.github.io pode reutilizar a configuração.
   */
   const CLIENT_ID = '946105310952-gp143h81mm3704lrq3877hsie49njgak.apps.googleusercontent.com';
-  const API_KEY = 'AIzaSyAMm_8CtFg_YP2ssG4XaiBbOc7wuJFq7xs';
+  const API_KEY = 'AIzaSyDhIJJ7XgvJC1i6NzylSZI2vs3RuvuRjn4';
   const PROJECT_NUMBER = '946105310952';
   const SCOPES = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file';
   const ALLOWED_ACCOUNT_HASHES = new Set(['8593d642f79e2a03a8a75ae91096d00d77e4f82f5149283684b6605fc9821a9e','db9c91e0d2956a89a70d9683b4a2a4d048b9cde255f861425342fe877b48339c']);
