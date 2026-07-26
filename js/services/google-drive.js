@@ -128,6 +128,55 @@
   let livePollTimer = null;
   let liveCheckInFlight = false;
 
+  /* V1.21.2 — exclusões confirmadas pelo usuário não podem ser confundidas com
+     uma base vazia/corrompida. A autorização abaixo é curta, fica só em memória
+     e cobre EXATAMENTE a sequência de contagens antes -> depois informada pela
+     própria ação de exclusão. Ela nunca libera uma queda diferente da esperada. */
+  let pendingIntentionalDeletion = null;
+  const INTENTIONAL_DELETION_TTL_MS = 2 * 60 * 1000;
+
+  function criticalCountsEqual(left, right) {
+    if (!left || !right) return false;
+    return (window.DataGuard?.CRITICAL_COLLECTIONS || []).every(key =>
+      (Number(left[key]) || 0) === (Number(right[key]) || 0)
+    );
+  }
+
+  function hasRealCountDrop(beforeCounts, afterCounts) {
+    return (window.DataGuard?.CRITICAL_COLLECTIONS || []).some(key =>
+      (Number(afterCounts?.[key]) || 0) < (Number(beforeCounts?.[key]) || 0)
+    );
+  }
+
+  function authorizeIntentionalDeletion(beforeCounts, afterCounts, reason = 'exclusao-confirmada') {
+    if (!beforeCounts || !afterCounts || !hasRealCountDrop(beforeCounts, afterCounts)) return false;
+    const now = Date.now();
+    const current = pendingIntentionalDeletion;
+    if (current && current.expiresAt > now && criticalCountsEqual(current.afterCounts, beforeCounts)) {
+      current.afterCounts = JSON.parse(JSON.stringify(afterCounts));
+      current.reason = `${current.reason} + ${reason}`;
+      current.expiresAt = now + INTENTIONAL_DELETION_TTL_MS;
+      return true;
+    }
+    pendingIntentionalDeletion = {
+      beforeCounts: JSON.parse(JSON.stringify(beforeCounts)),
+      afterCounts: JSON.parse(JSON.stringify(afterCounts)),
+      reason: String(reason || 'exclusao-confirmada'),
+      createdAt: now,
+      expiresAt: now + INTENTIONAL_DELETION_TTL_MS
+    };
+    return true;
+  }
+
+  function matchesIntentionalDeletion(remoteCounts, nextCounts) {
+    const auth = pendingIntentionalDeletion;
+    if (!auth) return false;
+    if (auth.expiresAt <= Date.now()) { pendingIntentionalDeletion = null; return false; }
+    return criticalCountsEqual(auth.beforeCounts, remoteCounts) &&
+      criticalCountsEqual(auth.afterCounts, nextCounts) &&
+      hasRealCountDrop(auth.beforeCounts, auth.afterCounts);
+  }
+
   /* Nunca aplica uma atualização automática em cima de um modal, do diálogo de
      confirmação, do seletor tipo roda (iOS) ou de um campo em edição — isso
      poderia apagar o que a pessoa estava preenchendo. Se não for seguro agora,
@@ -797,7 +846,8 @@
         if (!skipSuspiciousCheck) {
           const nextCounts = window.DataGuard.collectRecordCounts(state);
           const check = window.DataGuard.detectSuspiciousDrop(nextCounts, remote.counts);
-          if (check.suspicious) {
+          const intentionalDeletion = check.suspicious && matchesIntentionalDeletion(remote.counts, nextCounts);
+          if (check.suspicious && !intentionalDeletion) {
             throw new DriveGuardError('SUSPICIOUS_WRITE', `Salvamento bloqueado por segurança: ${window.DataGuard.describeSuspiciousReasons(check.reasons)}. Os dados desta sessão parecem vazios ou incompletos, enquanto o Google Drive tem uma base maior. Nenhuma informação foi substituída.`, {
               reasons: check.reasons, nextCounts, remoteCounts: remote.counts
             });
@@ -850,6 +900,9 @@
       }
 
       writeLastKnownGoodCounts(workspaceId, nextCounts);
+      if (pendingIntentionalDeletion && criticalCountsEqual(pendingIntentionalDeletion.afterCounts, nextCounts)) {
+        pendingIntentionalDeletion = null;
+      }
       GoogleDriveClinic.currentFile = file;
       localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
       return { file, revision: nextRevision, counts: nextCounts, workspaceId, payload };
@@ -916,6 +969,7 @@
     saveAuthoritative,
     readLastKnownGoodCounts,
     recordKnownGoodCounts: writeLastKnownGoodCounts,
+    authorizeIntentionalDeletion,
     listBackupSnapshots,
     previewSnapshot,
     restoreSnapshot,
@@ -1177,6 +1231,8 @@
       },
       readRemoteAuthoritative,
       DriveGuardError,
+      authorizeIntentionalDeletion,
+      hasPendingIntentionalDeletion() { return !!pendingIntentionalDeletion; },
       setFolderIdForTests(id) { setFolderId(id); }
     }
   };

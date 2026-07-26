@@ -2,17 +2,17 @@
   'use strict';
 
   /* ========================================================================
-     BORION INTEROP SOURCE v1.0.0 — PROTECTED INTEGRATION BOUNDARY
+     BORION INTEROP SOURCE v1.1.0 — PROTECTED INTEGRATION BOUNDARY
      DO NOT MODIFY, REFORMAT OR REMOVE WITHOUT AN EXPLICIT INTERCONNECTION REQUEST.
      This module is intentionally isolated from the operational application.
      ======================================================================== */
   const SPEC = Object.freeze({
     schema: 'borion.interop.snapshot',
     schemaVersion: 1,
-    bridgeVersion: '1.0.0',
+    bridgeVersion: '1.1.0',
     sourceAppId: 'amanda-estetica',
     sourceAppName: 'Amanda Estética — Clínica',
-    sourceAppVersion: '1.15.2',
+    sourceAppVersion: '1.21.2',
     targetProfileAlias: 'estetica',
     snapshotFile: 'amanda-estetica.bridge.json',
     ackFile: 'amanda-estetica.ack.json',
@@ -238,6 +238,22 @@
 
   async function publish(state){
     if (!state || publishing) return null;
+
+    // V1.21.2 — nunca publique o espelho da integração antes de a mesma
+    // alteração estar confirmada no arquivo principal do Google Drive.
+    // Isso evita que uma exclusão seja enviada ao Borion e, logo depois,
+    // uma cópia antiga do banco da Amanda a faça reaparecer nos dois apps.
+    if (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave()) {
+      const waitingBridge = ensureBridgeState(state);
+      waitingBridge.lastPublishStatus = 'waiting-authoritative-save';
+      waitingBridge.lastError = '';
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        publish(state).catch(error => console.warn('[BORION_INTEROP_SOURCE] Deferred publish failed:', error));
+      }, 2500);
+      return { deferred: true, reason: 'authoritative-save-pending', destinations: [], errors: [] };
+    }
+
     publishing = true;
     const bridge = ensureBridgeState(state);
     let snapshot;
@@ -306,6 +322,7 @@
     start,
     schedule,
     publish,
+    prepareSnapshot: state => reconcileState(state || (stateGetter && stateGetter())),
     forceSync: state => publish(state || (stateGetter && stateGetter())),
     getStatus(state){ return clone(ensureBridgeState(state || (stateGetter && stateGetter()))); },
     __test: { hash, stableStringify, projectRecords, reconcileState, applyAcknowledgement, statusCode }

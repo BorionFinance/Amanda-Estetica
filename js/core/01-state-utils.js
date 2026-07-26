@@ -11,6 +11,8 @@ let STATE = null;
   let modalSubmitHandler = null;
   let folderSaveTimer = null;
   let googleSaveTimer = null;
+  let googleSaveRetryTimer = null;
+  let googleSaveDirty = false;
   let folderSaveIdle = null;
   let googleSaveIdle = null;
   let deferredInstallPrompt = null;
@@ -306,17 +308,33 @@ let STATE = null;
     catch (_) { /* sem perfil ativo ainda — a marca em localStorage já é suficiente */ }
   }
 
+  function captureIntentionalDeletionBaseline() {
+    return window.DataGuard?.collectRecordCounts?.(STATE) || null;
+  }
+
+  function authorizeIntentionalDeletionFromBaseline(beforeCounts, reason = 'exclusao-confirmada') {
+    if (!beforeCounts || !window.DataGuard?.collectRecordCounts || !window.GoogleDriveClinic?.authorizeIntentionalDeletion) return false;
+    const afterCounts = window.DataGuard.collectRecordCounts(STATE);
+    return window.GoogleDriveClinic.authorizeIntentionalDeletion(beforeCounts, afterCounts, reason);
+  }
+
   async function persist(reason = '', options = {}) {
     if (reason) addAudit(reason, options.detail || '');
+    if (options.intentionalDeletionBeforeCounts) {
+      authorizeIntentionalDeletionFromBaseline(options.intentionalDeletionBeforeCounts, reason || 'exclusao-confirmada');
+    }
     await ClinicStorage.save(STATE);
-    if (window.AmandaBorionInterop) AmandaBorionInterop.schedule(STATE); // protected interop seam
     // V1.20.0 — nenhuma gravação remota é agendada enquanto a base do Google
     // Drive não estiver carregada, validada e hidratada nesta sessão. O dado
     // ainda fica salvo neste navegador (linha acima); só a sincronização com
     // o Drive/pasta é que espera a conexão voltar.
     if (window.AppLifecycle && !window.AppLifecycle.canWrite()) {
-      updateSaveStatus('Sem conexão · alteração não sincronizada', 'warn');
-      toast('Sem conexão com o Google Drive. Esta alteração ficou só neste navegador até reconectar.', 'warn');
+      updateSaveStatus('Sem conexão · alteração aguardando sincronização', 'warn');
+      if (window.GoogleDriveClinic?.isConfigured?.() && data().settings.autosaveGoogle !== false) {
+        GoogleDriveClinic.markAutosaveDirty?.();
+        scheduleGoogleDriveSave(3000);
+      }
+      toast('Sem conexão com o Google Drive. A alteração foi preservada e será reenviada quando a conexão voltar.', 'warn');
       return;
     }
     if (window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.markAutosaveDirty();
@@ -362,12 +380,15 @@ let STATE = null;
   // nem a chamada de rede em si).
   let googleSaveInFlight = false;
   function hasPendingGoogleDriveSave() {
-    return !!googleSaveTimer || googleSaveInFlight;
+    return !!googleSaveTimer || !!googleSaveRetryTimer || googleSaveInFlight || googleSaveDirty;
   }
   window.hasPendingGoogleDriveSave = hasPendingGoogleDriveSave;
 
-  function scheduleGoogleDriveSave() {
+  function scheduleGoogleDriveSave(delay = 1900) {
+    googleSaveDirty = true;
     clearTimeout(googleSaveTimer);
+    clearTimeout(googleSaveRetryTimer);
+    googleSaveRetryTimer = null;
     if (googleSaveIdle && 'cancelIdleCallback' in window) cancelIdleCallback(googleSaveIdle);
     googleSaveIdle = null;
     googleSaveTimer = setTimeout(() => {
@@ -376,26 +397,56 @@ let STATE = null;
         googleSaveTimer = 0;
         googleSaveInFlight = true;
         try {
-          if (!window.GoogleDriveClinic?.isConfigured()) { setCloudSyncStatus('disconnected'); return; }
-          if (window.AppLifecycle && !window.AppLifecycle.canWrite()) { setCloudSyncStatus('failed', 'Não sincronizado com o Google'); return; }
+          if (!window.GoogleDriveClinic?.isConfigured()) {
+            googleSaveDirty = false;
+            setCloudSyncStatus('disconnected');
+            if (window.AmandaBorionInterop) AmandaBorionInterop.schedule(STATE, 50);
+            return;
+          }
+          if (window.AppLifecycle && !window.AppLifecycle.canWrite()) {
+            setCloudSyncStatus('failed', 'Não sincronizado com o Google');
+            googleSaveRetryTimer = setTimeout(() => {
+              googleSaveRetryTimer = null;
+              if (googleSaveDirty) scheduleGoogleDriveSave(0);
+            }, 5000);
+            return;
+          }
           setCloudSyncStatus('syncing','Sincronizando com o Google');
+          // Atualiza shadow/tombstones ANTES do banco principal ser gravado.
+          // Assim a memória da integração também fica durável no Drive e não
+          // desaparece se o app for fechado logo após uma exclusão.
+          try {
+            if (window.AmandaBorionInterop?.prepareSnapshot) AmandaBorionInterop.prepareSnapshot(STATE);
+          } catch (interopError) {
+            console.warn('[Amanda Clínica] Não foi possível preparar o estado da integração antes do salvamento:', interopError);
+          }
           await GoogleDriveClinic.save(STATE);
+          googleSaveDirty = false;
           setCloudSyncStatus('synced','Sincronizado com o Google');
           updateSaveStatus('Google Drive sincronizado', 'ok');
+          // A integração só publica depois que a base oficial confirmou a mesma
+          // alteração. Assim um registro excluído nunca some no bridge antes de
+          // a exclusão estar durável no arquivo principal da Amanda.
+          if (window.AmandaBorionInterop) AmandaBorionInterop.schedule(STATE, 50);
         } catch (error) {
           console.warn('[Amanda Clínica] Autosave do Google Drive falhou:', error);
+          googleSaveDirty = true;
           setCloudSyncStatus('failed','Não sincronizado com o Google');
           if (error?.code === 'SUSPICIOUS_WRITE') {
             updateSaveStatus('Salvamento bloqueado por segurança', 'warn');
             toast(error.message, 'error');
           } else if (error?.code === 'STALE_REVISION') {
             updateSaveStatus('Google Drive foi atualizado em outro lugar', 'warn');
-            toast('Outro dispositivo ou aba salvou antes. Use "Sincronizar com o Google" para carregar a versão mais recente antes de continuar editando.', 'warn');
+            toast('Outro dispositivo ou aba salvou antes. A alteração local foi preservada e não será substituída automaticamente.', 'warn');
           } else if (error?.code === 'WORKSPACE_MISMATCH') {
             updateSaveStatus('Pasta do Google Drive incorreta', 'warn');
             toast(error.message, 'error');
           } else {
             updateSaveStatus('Salvo local · Google pendente', 'warn');
+            googleSaveRetryTimer = setTimeout(() => {
+              googleSaveRetryTimer = null;
+              if (googleSaveDirty) scheduleGoogleDriveSave(0);
+            }, 8000);
           }
         } finally {
           googleSaveInFlight = false;
@@ -403,7 +454,7 @@ let STATE = null;
       };
       if ('requestIdleCallback' in window) googleSaveIdle = requestIdleCallback(run, { timeout: 3000 });
       else setTimeout(run, 0);
-    }, 1900);
+    }, Math.max(0, Number(delay) || 0));
   }
 
   function cloudSyncSnapshot() {

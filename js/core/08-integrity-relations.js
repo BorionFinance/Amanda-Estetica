@@ -650,15 +650,17 @@ function countTotal(object) {
 async function deleteAppointmentRecord(id) {
   const item = data().appointments.find(x=>x.id===id);
   if (!item || !await confirmAction(`Excluir o agendamento de ${item.clientName || 'cliente'}?`)) return;
+  const deletionBaseline = captureIntentionalDeletionBaseline();
   data().appointments = data().appointments.filter(x=>x.id!==id);
   data().attendances.forEach(att=>{if(att.appointmentId===id)att.appointmentId='';});
-  await persist('Agendamento excluído',{detail:`${item.clientName} · ${item.protocolName}`});
+  await persist('Agendamento excluído',{detail:`${item.clientName} · ${item.protocolName}`,intentionalDeletionBeforeCounts:deletionBaseline});
   closeModal(); renderView(); toast('Agendamento excluído.');
 }
 
 async function deleteAttendanceRecord(id) {
   const item = data().attendances.find(x=>x.id===id);
   if (!item || !await confirmAction(`Excluir este atendimento? O estoque, o pacote e o financeiro serão recalculados.`)) return;
+  const deletionBaseline = captureIntentionalDeletionBaseline();
   restoreAttendanceInventory(item);
   data().attendances = data().attendances.filter(x=>x.id!==id);
   removeAutoFinance(fin=>fin.attendanceId===id);
@@ -667,7 +669,7 @@ async function deleteAttendanceRecord(id) {
     const appointment=data().appointments.find(x=>x.id===item.appointmentId);
     if(appointment)appointment.status=appointment.confirmed?'Confirmado':'Agendado';
   }
-  await persist('Atendimento excluído',{detail:`${item.clientName} · ${item.protocolName}`});
+  await persist('Atendimento excluído',{detail:`${item.clientName} · ${item.protocolName}`,intentionalDeletionBeforeCounts:deletionBaseline});
   closeModal(); renderView(); toast('Atendimento excluído e vínculos recalculados.');
 }
 
@@ -686,23 +688,26 @@ async function deletePackageRecord(id) {
     return;
   }
   if (!await confirmAction('Excluir este pacote vazio?')) return;
+  const deletionBaseline = captureIntentionalDeletionBaseline();
   data().packages = data().packages.filter(x=>x.id!==id);
-  await persist('Pacote excluído',{detail:`${pkg.clientName} · ${pkg.protocolName}`});
+  await persist('Pacote excluído',{detail:`${pkg.clientName} · ${pkg.protocolName}`,intentionalDeletionBeforeCounts:deletionBaseline});
   closeModal(); renderView(); toast('Pacote excluído.');
 }
 
 async function deleteAnamnesisRecord(id) {
   const item=data().anamneses.find(x=>x.id===id);
   if(!item||!await confirmAction('Excluir definitivamente esta anamnese?'))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().anamneses=data().anamneses.filter(x=>x.id!==id);
-  await persist('Anamnese excluída',{detail:item.clientName}); closeModal(); renderView(); toast('Anamnese excluída.');
+  await persist('Anamnese excluída',{detail:item.clientName,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Anamnese excluída.');
 }
 
 async function deleteConsentRecord(id) {
   const item=data().consents.find(x=>x.id===id);
   if(!item||!await confirmAction('Excluir definitivamente este consentimento?'))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().consents=data().consents.filter(x=>x.id!==id);
-  await persist('Consentimento excluído',{detail:`${item.clientName} · ${item.protocolName}`}); closeModal(); renderView(); toast('Consentimento excluído.');
+  await persist('Consentimento excluído',{detail:`${item.clientName} · ${item.protocolName}`,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Consentimento excluído.');
 }
 
 async function deleteClientRecord(id) {
@@ -716,8 +721,9 @@ async function deleteClientRecord(id) {
     return;
   }
   if(!await confirmAction(`Excluir a cliente ${client.name}? Ela não possui nenhum registro vinculado.`))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().clients=data().clients.filter(x=>x.id!==id);
-  await persist('Cliente excluída',{detail:client.name}); closeModal(); renderView(); toast('Cliente excluída.');
+  await persist('Cliente excluída',{detail:client.name,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Cliente excluída.');
 }
 
 async function deleteProtocolRecord(id) {
@@ -737,8 +743,9 @@ async function deleteProtocolRecord(id) {
     await persist('Protocolo arquivado',{detail:protocol.name}); closeModal(); renderView(); toast('Protocolo arquivado; histórico preservado.'); return;
   }
   if(!await confirmAction(`Excluir o protocolo ${protocol.name}?`))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().protocols=data().protocols.filter(x=>x.id!==id);
-  await persist('Protocolo excluído',{detail:protocol.name}); closeModal(); renderView(); toast('Protocolo excluído.');
+  await persist('Protocolo excluído',{detail:protocol.name,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Protocolo excluído.');
 }
 
 async function deleteProductRecord(id) {
@@ -751,8 +758,9 @@ async function deleteProductRecord(id) {
     await persist('Produto arquivado',{detail:product.name}); closeModal(); renderView(); toast('Produto arquivado; histórico preservado.'); return;
   }
   if(!await confirmAction(`Excluir o produto ${product.name}?`))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().products=data().products.filter(x=>x.id!==id);
-  await persist('Produto excluído',{detail:product.name}); closeModal(); renderView(); toast('Produto excluído.');
+  await persist('Produto excluído',{detail:product.name,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Produto excluído.');
 }
 
 async function deleteDisposableRecord(id) {
@@ -765,8 +773,9 @@ async function deleteDisposableRecord(id) {
     await persist('Descartável arquivado',{detail:disposable.name}); closeModal(); renderView(); toast('Descartável arquivado; histórico preservado.'); return;
   }
   if(!await confirmAction(`Excluir o descartável ${disposable.name}?`))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().disposables=data().disposables.filter(x=>x.id!==id);
-  await persist('Descartável excluído',{detail:disposable.name}); closeModal(); renderView(); toast('Descartável excluído.');
+  await persist('Descartável excluído',{detail:disposable.name,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Descartável excluído.');
 }
 
 async function toggleDisposableArchive(id) {
@@ -797,8 +806,9 @@ async function deleteFinanceRecordSafe(id) {
     return;
   }
   if(!await confirmAction('Excluir este lançamento financeiro?'))return;
+  const deletionBaseline=captureIntentionalDeletionBaseline();
   data().finance=data().finance.filter(x=>x.id!==id);
-  await persist('Lançamento excluído',{detail:entry.description}); closeModal(); renderView(); toast('Lançamento excluído.');
+  await persist('Lançamento excluído',{detail:entry.description,intentionalDeletionBeforeCounts:deletionBaseline}); closeModal(); renderView(); toast('Lançamento excluído.');
 }
 
 
