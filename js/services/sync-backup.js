@@ -21,7 +21,13 @@ async function manualSave() {
 
       if(window.GoogleDriveClinic?.isConfigured?.()){
         try{
-          await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual',thorough:true});
+          const saveResult=await GoogleDriveClinic.save(STATE,{backup:true,reason:'manual',thorough:true});
+          if(saveResult?.reconciled&&saveResult.payload){
+            STATE=saveResult.payload;
+            data();
+            await ClinicStorage.save(STATE);
+            renderShell();
+          }
           saved.push('Google Drive');
           setCloudSyncStatus('synced','Sincronizado com o Google');
         }catch(error){setCloudSyncStatus('failed','Não sincronizado com o Google');failures.push(`Google Drive: ${error.message}`);}
@@ -97,6 +103,38 @@ async function manualSave() {
       updateSaveStatus('Sincronizando com Google…','warn');
       const result=await GoogleDriveClinic.sync(STATE,{interactive:true,backup:true,reason:'sincronizacao'});
       if(result.direction==='remote'){
+        // V1.22.0 — antes disso sempre perguntava "deseja substituir?", mesmo
+        // quando não havia nada local para perder. Agora só pergunta quando de
+        // fato não dá pra conciliar sozinha (sem base de sessão conhecida);
+        // nos outros dois casos resolve sem tirar a pessoa da tela.
+        if(!GoogleDriveClinic.localDivergesFromSessionBase(STATE)){
+          // Nada mudou aqui desde a última vez que esta aba soube do Drive —
+          // só adota o que veio de outro dispositivo, sem perguntar nada.
+          STATE=result.state;
+          data();
+          await runIntegrityAudit({repair:true,save:false});
+          await ClinicStorage.save(STATE);
+          setCloudSyncStatus('synced','Sincronizado com o Google');
+          updateSaveStatus('Dados atualizados do Google Drive','ok');
+          renderShell();
+          toast('Dados mais recentes carregados do Google Drive.');
+          return;
+        }
+        if(GoogleDriveClinic.hasSessionBase()){
+          // Há alteração local ainda não publicada — concilia as duas edições
+          // e publica o resultado combinado, sem perguntar nada.
+          await ClinicStorage.createLocalBackup(STATE,'antes-de-conciliar-google');
+          const saveResult=await GoogleDriveClinic.save(STATE,{backup:true,reason:'sincronizacao-conciliada',thorough:true});
+          if(saveResult?.payload)STATE=saveResult.payload;
+          data();
+          await runIntegrityAudit({repair:true,save:false});
+          await ClinicStorage.save(STATE);
+          setCloudSyncStatus('synced','Sincronizado com o Google');
+          updateSaveStatus('Google Drive conciliado','ok');
+          renderShell();
+          toast('Suas alterações e as de outro dispositivo foram conciliadas.');
+          return;
+        }
         if(await confirmAction('O arquivo do Google Drive é mais recente. Deseja carregá-lo e substituir os dados deste navegador? Um backup local será criado antes.')){
           await ClinicStorage.createLocalBackup(STATE,'antes-de-carregar-google');
           STATE=result.state;

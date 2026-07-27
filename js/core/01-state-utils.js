@@ -420,7 +420,18 @@ let STATE = null;
           } catch (interopError) {
             console.warn('[Amanda Clínica] Não foi possível preparar o estado da integração antes do salvamento:', interopError);
           }
-          await GoogleDriveClinic.save(STATE);
+          await GoogleDriveClinic.save(STATE).then(async saveResult => {
+            if (saveResult?.reconciled && saveResult.payload) {
+              // Outro dispositivo tinha salvo no meio do caminho — o que foi
+              // gravado é o resultado conciliado (ver merge-engine.js), então
+              // a tela também precisa refletir os registros que vieram de lá.
+              STATE = saveResult.payload;
+              if (typeof data === 'function') data();
+              if (window.ClinicStorage) await window.ClinicStorage.save(STATE);
+              if (typeof renderView === 'function') renderView();
+              toast('Conciliado com uma alteração feita em outro dispositivo.');
+            }
+          });
           googleSaveDirty = false;
           setCloudSyncStatus('synced','Sincronizado com o Google');
           updateSaveStatus('Google Drive sincronizado', 'ok');
@@ -436,8 +447,23 @@ let STATE = null;
             updateSaveStatus('Salvamento bloqueado por segurança', 'warn');
             toast(error.message, 'error');
           } else if (error?.code === 'STALE_REVISION') {
-            updateSaveStatus('Google Drive foi atualizado em outro lugar', 'warn');
-            toast('Outro dispositivo ou aba salvou antes. A alteração local foi preservada e não será substituída automaticamente.', 'warn');
+            // V1.22.0 — isso só acontece quando esta aba ainda não tem uma
+            // base local para conciliar (ver merge-engine.js). Carregar a
+            // base autoritativa agora resolve isso: da próxima vez que este
+            // autosave rodar, já haverá uma base para reconciliar as duas
+            // edições em vez de perder uma delas.
+            updateSaveStatus('Conciliando com outro dispositivo…', 'warn');
+            try {
+              await window.GoogleDriveClinic.loadAuthoritative?.({ interactive: false });
+              googleSaveRetryTimer = setTimeout(() => {
+                googleSaveRetryTimer = null;
+                if (googleSaveDirty) scheduleGoogleDriveSave(0);
+              }, 1500);
+            } catch (reloadError) {
+              console.warn('[Amanda Clínica] Não foi possível carregar a base para conciliar:', reloadError);
+              updateSaveStatus('Google Drive foi atualizado em outro lugar', 'warn');
+              toast('Outro dispositivo salvou antes e a alteração local ainda não pôde ser conciliada. Nova tentativa em instantes.', 'warn');
+            }
           } else if (error?.code === 'WORKSPACE_MISMATCH') {
             updateSaveStatus('Pasta do Google Drive incorreta', 'warn');
             toast(error.message, 'error');

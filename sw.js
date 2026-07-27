@@ -1,4 +1,4 @@
-const CACHE='amanda-clinica-v1.21.2-live-sync';
+const CACHE='amanda-clinica-v1.22.0-merge-engine';
 const APP_SHELL=[
   "./",
   "./index.html",
@@ -35,9 +35,10 @@ const APP_SHELL=[
   "./js/services/data-guard.js?v=1.20.0",
   "./js/services/app-lifecycle.js?v=1.20.0",
   "./js/services/storage.js?v=1.20.0",
-  "./js/services/google-drive.js?v=1.21.2",
+  "./js/services/merge-engine.js?v=1.22.0",
+  "./js/services/google-drive.js?v=1.22.0",
   "./js/core/00-config-icons.js?v=1.17.0",
-  "./js/core/01-state-utils.js?v=1.21.2",
+  "./js/core/01-state-utils.js?v=1.22.0",
   "./js/core/08-integrity-relations.js?v=1.21.2",
   "./js/core/02-ui-components.js?v=1.18.0",
   "./js/core/03-shell-navigation.js?v=1.19.1",
