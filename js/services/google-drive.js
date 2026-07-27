@@ -118,21 +118,6 @@
   let autosaveInFlight = false;
   let autosaveStateGetter = null;
 
-  /* V1.22.0 — a última base completa que ESTA aba carregou ou confirmou no
-     Google Drive. É o ponto comum (o "base" da conciliação de três vias)
-     usado por saveAuthoritative quando a revisão remota muda entre o login
-     e uma gravação — sem isso, a única opção era gravar a sessão inteira
-     por cima do que outro dispositivo acabou de salvar (ver
-     js/services/merge-engine.js para a lógica de conciliação em si). Fica
-     só em memória: se a aba recarregar, loadAuthoritative a define de novo. */
-  let sessionBaseState = null;
-  let sessionBaseRevision = null;
-  function rememberSessionBase(state, revision) {
-    if (!state) return;
-    sessionBaseState = JSON.parse(JSON.stringify(state));
-    sessionBaseRevision = Number(revision) || 0;
-  }
-
   /* V1.21.0 — "atualização ao vivo" entre dispositivos, mesma ideia que foi
      construída para o Borion Finance: a cada LIVE_POLL_INTERVAL_MS, se este
      dispositivo não tem nenhuma gravação local pendente, confere só a
@@ -818,10 +803,7 @@
   async function loadAuthoritative(options = {}) {
     const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
     const remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
-    if (remote.exists) {
-      writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
-      rememberSessionBase(remote.state, remote.revision);
-    }
+    if (remote.exists) writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
     return { ...remote, folderId };
   }
 
@@ -850,37 +832,12 @@
         throw new DriveGuardError('MISSING_REMOTE', 'Ainda não existe uma base da clínica nesta pasta do Google Drive. Use a opção de criar uma base nova antes de continuar.', {});
       }
 
-      // V1.22.0 — se a revisão remota mudou desde que esta sessão carregou
-      // (ou confirmou) a base pela última vez, outro dispositivo/aba salvou
-      // no meio do caminho. Antes, isso ou travava a gravação (STALE_REVISION,
-      // nos salvamentos "cuidadosos") ou — no autosave de rotina, que nunca
-      // passava expectedRevision — gravava a sessão inteira por cima da
-      // alteração alheia, apagando-a silenciosamente. Agora concilia as duas
-      // edições (ver js/services/merge-engine.js) e segue gravando o
-      // resultado combinado, sem perder nenhum dos dois lados.
-      let reconciled = false;
       if (remote.exists) {
-        const revisionMoved = Number(remote.revision) !== Number(sessionBaseRevision);
-        const explicitlyStale = expectedRevision !== null && expectedRevision !== undefined && remote.revision !== expectedRevision;
-        if (revisionMoved || explicitlyStale) {
-          if (!sessionBaseState) {
-            throw new DriveGuardError('STALE_REVISION', 'O Google Drive foi atualizado por outro dispositivo ou aba desde que esta sessão carregou os dados. Reabra o aplicativo para carregar a base mais recente antes de salvar de novo.', {
-              expectedRevision, remoteRevision: remote.revision, remoteCounts: remote.counts
-            });
-          }
-          const remoteFull = remote.state || (remote.meta ? await readJsonFile(remote.meta.id) : null);
-          if (!remoteFull) {
-            throw new DriveGuardError('STALE_REVISION', 'O Google Drive foi atualizado por outro dispositivo, mas não foi possível ler o conteúdo mais recente para conciliar. Nada foi substituído — tente de novo em instantes.', {
-              expectedRevision, remoteRevision: remote.revision
-            });
-          }
-          state = window.AmandaMergeEngine.mergeClinicState(sessionBaseState, state, remoteFull);
-          remote.state = remoteFull;
-          reconciled = true;
+        if (expectedRevision !== null && expectedRevision !== undefined && remote.revision !== expectedRevision) {
+          throw new DriveGuardError('STALE_REVISION', 'O Google Drive foi atualizado por outro dispositivo ou aba desde que esta sessão carregou os dados. Nada foi substituído — recarregue antes de salvar de novo.', {
+            expectedRevision, remoteRevision: remote.revision, remoteCounts: remote.counts
+          });
         }
-      }
-
-      if (remote.exists) {
         if (state.workspaceId && remote.workspaceId && state.workspaceId !== remote.workspaceId) {
           throw new DriveGuardError('WORKSPACE_MISMATCH', 'Esta pasta do Google Drive pertence a outra base de dados (workspace diferente). Nada foi substituído.', {
             localWorkspaceId: state.workspaceId, remoteWorkspaceId: remote.workspaceId
@@ -923,7 +880,6 @@
 
       const file = await saveDataFile(folderId, payload, appProperties);
       writeStoredWorkspaceId(folderId, workspaceId);
-      rememberSessionBase(payload, nextRevision);
 
       // Reler para confirmar só acontece em gravações "cuidadosas" — no
       // autosave de rotina, a própria resposta 200 do upload já é a
@@ -949,7 +905,7 @@
       }
       GoogleDriveClinic.currentFile = file;
       localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
-      return { file, revision: nextRevision, counts: nextCounts, workspaceId, payload, reconciled };
+      return { file, revision: nextRevision, counts: nextCounts, workspaceId, payload };
     });
   }
 
@@ -1111,7 +1067,6 @@
         if (typeof data === 'function') data();
         if (typeof runIntegrityAudit === 'function') await runIntegrityAudit({ repair: true, save: false });
         if (window.ClinicStorage) await window.ClinicStorage.save(STATE);
-        rememberSessionBase(full.state, full.revision);
         lc.setRevision(full.revision);
         lc.setWorkspaceId(full.workspaceId);
         lc.setLastKnownGoodCounts(full.counts);
@@ -1184,22 +1139,7 @@
         window.AppLifecycle.setWorkspaceId(result.workspaceId);
         window.AppLifecycle.setLastKnownGoodCounts(result.counts);
       }
-      // V1.22.0 — quando o Drive tinha mudado por outro dispositivo/aba desde
-      // a última vez que esta sessão soube (ver merge-engine.js), o que foi
-      // gravado é o resultado conciliado, não exatamente o `state` que entrou
-      // aqui. Devolve o payload junto para quem chamou poder atualizar o STATE
-      // em memória — senão a tela ficaria mostrando uma versão sem os
-      // registros que vieram do outro lado.
-      return { file: result.file, payload: result.payload, reconciled: !!result.reconciled };
-    },
-
-    /* V1.22.0 — usados por quem chama sync()/save() para saber se dá pra só
-       adotar o remoto direto (nada de novo aqui desde a última base conhecida)
-       ou se é preciso conciliar em vez de perguntar "substituir?" à pessoa. */
-    hasSessionBase() { return !!sessionBaseState; },
-    localDivergesFromSessionBase(state) {
-      if (!sessionBaseState) return true;
-      return !window.AmandaMergeEngine.valueEqual(state, sessionBaseState);
+      return result.file;
     },
 
     /* V1.20.0 — leitura sempre autoritativa (busca o arquivo mais recente do
