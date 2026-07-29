@@ -10,7 +10,6 @@ function renderLogin(animationClass = '') {
     document.body.classList.add('login-page');
     document.body.classList.remove('sidebar-open');
     $('#root').innerHTML = `<main class="login-shell ${animationClass}">
-      <button class="login-offline-entry" type="button" data-action="enter-profile-offline" data-id="${eattr(profile?.id || '')}" title="Acesso direto sem login, só neste dispositivo">Entrar sem login</button>
       <div class="login-signature-stage" data-login-signature aria-hidden="true">
         <img class="login-signature-frame" width="501" height="750" alt="" aria-hidden="true" decoding="async" fetchpriority="high">
       </div>
