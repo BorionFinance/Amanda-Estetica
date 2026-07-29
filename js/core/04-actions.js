@@ -15,7 +15,6 @@ async function handleAction(action, el) {
       'confirm-wheel-picker':confirmWheelPicker,
       'enter-profile':()=>enterProfile(id),
       'enter-profile-google':()=>enterProfileWithGoogle(id,el),
-      'enter-profile-offline':()=>enterProfileOffline(id),
       'retry-drive-connection':()=>retryDriveConnection(),
       'cancel-drive-connection':()=>cancelConnectionAttempt(),
       'view-cached-readonly':()=>viewCachedReadOnly(),
@@ -212,23 +211,6 @@ async function handleAction(action, el) {
       LOGIN_GOOGLE_INFLIGHT=null;
     });
     return await LOGIN_GOOGLE_INFLIGHT;
-  }
-
-  /* V1.20.0 — "Entrar sem login" costumava pular direto para o shell com o
-     que quer que estivesse no cache local, sem NUNCA conferir o Google
-     Drive. Se o Drive já foi conectado neste navegador antes, ele continua
-     sendo a fonte da verdade também neste atalho: a validação roda em
-     segundo plano (sem popup, silenciosa) antes de liberar a edição. Só
-     quando o Drive nunca foi configurado é que este botão entra 100% local,
-     como antes. */
-  async function enterProfileOffline(id){
-    if(window.GoogleDriveClinic?.isConfigured?.()){
-      const outcome=await attemptDriveEntryAndEnter({interactive:false});
-      if(!outcome.ok)return; // tela de conexão/erro já cobre a interface
-      markSessionUnlocked(STATE.profiles.find(x=>x.id===id)||activeProfile(),'test');
-      return;
-    }
-    completeProfileUnlock(STATE.profiles.find(x=>x.id===id)||activeProfile(),'test','',true);
   }
 
   /* V1.16.0 — painel "Instruções e mais opções" da tela de login, mesmo papel do
