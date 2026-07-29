@@ -47,6 +47,7 @@
   const ROTATING_FILE_ID_PREFIX = 'amanda_clinica_gdrive_rotating_file_';
   const ROTATING_SLOT_INDEX_PREFIX = 'amanda_clinica_gdrive_rotating_slot_';
   const ENCRYPTED_BACKUPS_MARKER_PREFIX = 'amanda_clinica_encrypted_backups_v1_';
+  const ENCRYPTED_BACKUPS_QUEUE_PREFIX = 'amanda_clinica_encrypted_backups_queue_v2_';
 
   /* ================================================================
      V1.20.0 — CORREÇÃO CRÍTICA DE PROTEÇÃO DE DADOS
@@ -131,6 +132,9 @@
   let autosaveDirty = false;
   let autosaveInFlight = false;
   let autosaveStateGetter = null;
+  let primaryEncryptionTimer = null;
+  let backupEncryptionTimer = null;
+  let encryptionMigrationInFlight = false;
 
   /* V1.21.0 — "atualização ao vivo" entre dispositivos, mesma ideia que foi
      construída para o Borion Finance: a cada LIVE_POLL_INTERVAL_MS, se este
@@ -661,7 +665,7 @@
       headers: await headers()
     });
     if (!response.ok) throw new Error('Falha ao carregar o arquivo do Google Drive.');
-    return await SecureVault.open(await response.json());
+    return await SecureVault.open(await response.json(), { prepare: false });
   }
 
   async function getMeta(fileId) {
@@ -823,30 +827,9 @@
     const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
     const remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
     if (remote.exists && SecureVault.needsMigration()) {
-      await writeRotatingSnapshot(folderId, 'prewrite', PRESAVE_SNAPSHOT_SLOTS, remote.state);
-      const counts = window.DataGuard.collectRecordCounts(remote.state);
-      const appProperties = {
-        rev: String(Number(remote.state.databaseRevision) || 0),
-        wsid: remote.state.workspaceId || '',
-        ...encodeCountsToProps(counts)
-      };
-      await updateJsonFileWithMeta(remote.meta.id, remote.state, appProperties);
-      const confirmed = await readJsonFile(remote.meta.id);
-      if (!window.DataGuard.isValidClinicSchema(confirmed)) {
-        throw new DriveGuardError('ENCRYPTION_MIGRATION_FAILED', 'A conversao da base da Amanda para o formato criptografado nao foi confirmada. O backup protegido foi preservado e a abertura foi bloqueada.', {});
-      }
-      SecureVault.markMigrated();
-      remote.state = confirmed;
-      remote.source = 'content-encrypted-migration';
-    }
-    const backupMarker = ENCRYPTED_BACKUPS_MARKER_PREFIX + folderId;
-    if (remote.exists && localStorage.getItem(backupMarker) !== '1') {
-      try {
-        remote.migratedBackupCount = await migrateBackupSnapshotsEncryption(folderId);
-        localStorage.setItem(backupMarker, '1');
-      } catch (error) {
-        console.warn('[GoogleDriveClinic] A base principal esta protegida, mas a verificacao dos backups antigos sera repetida no proximo acesso:', error);
-      }
+      schedulePrimaryEncryptionMigration(folderId, remote);
+    } else if (remote.exists) {
+      scheduleBackupEncryptionMigration(folderId);
     }
     if (remote.exists) writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
     return { ...remote, folderId };
@@ -924,6 +907,10 @@
       const appProperties = { rev: String(nextRevision), wsid: workspaceId, ...encodeCountsToProps(nextCounts) };
 
       const file = await saveDataFile(folderId, payload, appProperties);
+      if (SecureVault.needsMigration()) {
+        SecureVault.markMigrated();
+        scheduleBackupEncryptionMigration(folderId);
+      }
       writeStoredWorkspaceId(folderId, workspaceId);
 
       // Reler para confirmar só acontece em gravações "cuidadosas" — no
@@ -964,22 +951,120 @@
     return Array.isArray(result.files) ? result.files : [];
   }
 
+  function deviceIsMobile() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')
+      || !!window.matchMedia?.('(pointer: coarse)')?.matches;
+  }
+
+  function hasForegroundSavePending() {
+    return autosaveInFlight
+      || autosaveDirty
+      || (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave());
+  }
+
+  function schedulePrimaryEncryptionMigration(folderId, remote, delay = 12000) {
+    if (!SecureVault.needsMigration()) {
+      scheduleBackupEncryptionMigration(folderId);
+      return;
+    }
+    if (primaryEncryptionTimer) clearTimeout(primaryEncryptionTimer);
+    primaryEncryptionTimer = setTimeout(async () => {
+      primaryEncryptionTimer = null;
+      if (!SecureVault.needsMigration()) {
+        scheduleBackupEncryptionMigration(folderId);
+        return;
+      }
+      if (encryptionMigrationInFlight || hasForegroundSavePending()) {
+        schedulePrimaryEncryptionMigration(folderId, remote, 15000);
+        return;
+      }
+      encryptionMigrationInFlight = true;
+      try {
+        const result = await saveAuthoritative(remote.state, {
+          expectedRevision: remote.revision,
+          skipSuspiciousCheck: true,
+          thorough: false,
+          reason: 'migracao-criptografia-em-segundo-plano'
+        });
+        SecureVault.markMigrated();
+        if (window.AppLifecycle) {
+          window.AppLifecycle.setRevision(result.revision);
+          window.AppLifecycle.setWorkspaceId(result.workspaceId);
+          window.AppLifecycle.setLastKnownGoodCounts(result.counts);
+        }
+        scheduleBackupEncryptionMigration(folderId, 15000);
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] A abertura continuou normalmente; a criptografia da base sera retomada sem bloquear o aplicativo:', error);
+        schedulePrimaryEncryptionMigration(folderId, remote, 60000);
+      } finally {
+        encryptionMigrationInFlight = false;
+      }
+    }, delay);
+  }
+
+  function readBackupEncryptionQueue(folderId) {
+    try {
+      const queue = JSON.parse(localStorage.getItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX + folderId) || 'null');
+      return Array.isArray(queue) ? queue.filter(item => item?.id && item?.name) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeBackupEncryptionQueue(folderId, queue) {
+    localStorage.setItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX + folderId, JSON.stringify(queue));
+  }
+
+  function scheduleBackupEncryptionMigration(folderId, delay = 30000) {
+    const marker = ENCRYPTED_BACKUPS_MARKER_PREFIX + folderId;
+    if (localStorage.getItem(marker) === '1' || deviceIsMobile()) return;
+    if (backupEncryptionTimer) clearTimeout(backupEncryptionTimer);
+    backupEncryptionTimer = setTimeout(() => {
+      backupEncryptionTimer = null;
+      migrateBackupSnapshotsEncryption(folderId).catch(error => {
+        console.warn('[GoogleDriveClinic] Um backup antigo sera tentado novamente mais tarde, sem bloquear o uso:', error);
+        scheduleBackupEncryptionMigration(folderId, 5 * 60 * 1000);
+      });
+    }, delay);
+  }
+
   async function migrateBackupSnapshotsEncryption(folderId) {
-    const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
-    const files = await listAllChildren(backups.id, 'application/json');
-    let migrated = 0;
-    for (const file of files) {
+    if (encryptionMigrationInFlight || hasForegroundSavePending()) {
+      scheduleBackupEncryptionMigration(folderId, 30000);
+      return 0;
+    }
+    encryptionMigrationInFlight = true;
+    try {
+      const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+      let files = readBackupEncryptionQueue(folderId);
+      if (files === null) {
+        files = await listAllChildren(backups.id, 'application/json');
+        writeBackupEncryptionQueue(folderId, files.map(file => ({ id: file.id, name: file.name })));
+      }
+      let migrated = 0;
+      const file = files[0];
+      if (!file) {
+        localStorage.setItem(ENCRYPTED_BACKUPS_MARKER_PREFIX + folderId, '1');
+        localStorage.removeItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX + folderId);
+        return 0;
+      }
       const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
       if (!response.ok) throw new Error(`Falha ao verificar a criptografia do backup ${file.name}.`);
       const raw = await response.json();
-      if (SecureVault.isEnvelope(raw) || !SecureVault.isSensitive(raw)) continue;
-      await updateJsonFile(file.id, raw);
-      const verifyResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
-      const verified = verifyResponse.ok ? await verifyResponse.json() : null;
-      if (!SecureVault.isEnvelope(verified)) throw new Error(`A criptografia do backup ${file.name} nao foi confirmada.`);
-      migrated += 1;
+      if (!SecureVault.isEnvelope(raw) && SecureVault.isSensitive(raw)) {
+        await updateJsonFile(file.id, raw);
+        const verifyResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
+        const verified = verifyResponse.ok ? await verifyResponse.json() : null;
+        if (!SecureVault.isEnvelope(verified)) throw new Error(`A criptografia do backup ${file.name} nao foi confirmada.`);
+        migrated = 1;
+      }
+      files.shift();
+      writeBackupEncryptionQueue(folderId, files);
+      scheduleBackupEncryptionMigration(folderId, 2 * 60 * 1000);
+      return migrated;
+    } finally {
+      encryptionMigrationInFlight = false;
     }
-    return migrated;
   }
 
   /* Seção 12 — recuperação: lista TODOS os arquivos da pasta "Backups" (os
@@ -1277,6 +1362,9 @@
       this.currentFile = null;
       this.stopAutosaveLoop();
       this.stopLivePollLoop();
+      if (primaryEncryptionTimer) { clearTimeout(primaryEncryptionTimer); primaryEncryptionTimer = null; }
+      if (backupEncryptionTimer) { clearTimeout(backupEncryptionTimer); backupEncryptionTimer = null; }
+      encryptionMigrationInFlight = false;
       resolvedFolders.clear();
       resolvedIntegrationFiles.clear();
       integrationFileInflight.clear();
