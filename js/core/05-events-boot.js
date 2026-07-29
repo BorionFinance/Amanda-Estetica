@@ -32,28 +32,25 @@ let RESIZE_FRAME = 0;
     const wasUnlocked = sessionStorage.getItem('amanda_clinica_unlocked') === '1';
 
     if (!driveConfigured) {
-      // Google Drive nunca foi conectado neste navegador: não há nada remoto
-      // para proteger ainda. Segue o fluxo local normal.
+      // Dados clínicos exigem autenticação Google. O cache local pode ser
+      // preparado para migração, mas nunca libera a interface sem uma conta
+      // autorizada e uma base do Drive validada.
+      sessionStorage.removeItem('amanda_clinica_unlocked');
+      sessionStorage.removeItem('amanda_clinica_auth_mode');
+      sessionStorage.removeItem('amanda_clinica_auth_email');
       data();
       await runIntegrityAudit({ repair: true, save: true });
       recordCloudAuthoritativeMigrationOnce();
-      window.AppLifecycle.markRemoteLoaded(null, null);
-      window.AppLifecycle.markRemoteValidated();
       applyInterfaceMode();
       CURRENT_VIEW = (location.hash || '#dashboard').slice(1);
       if (!VIEW_META[CURRENT_VIEW]) CURRENT_VIEW = 'dashboard';
       if (CURRENT_VIEW === 'settings') resetSettingsSection();
-      if (wasUnlocked) {
-        renderShell();
-        finalizeSessionReady();
-      } else {
-        renderLogin();
-      }
+      renderLogin();
     } else {
       // Google Drive já foi conectado antes neste navegador: ele é a fonte
       // oficial da verdade. Se a sessão ainda não estava desbloqueada, mostra
       // a tela de login normal (a validação roda quando a pessoa escolher
-      // "Entrar com Google" ou "Entrar sem login"). Se já estava desbloqueada
+      // "Entrar com Google"). Se já estava desbloqueada
       // (ex.: F5 no meio do uso), revalida contra o Drive ANTES de mostrar o
       // shell de novo — nunca reabre direto confiando só na flag de sessão.
       if (wasUnlocked) {
