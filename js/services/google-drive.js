@@ -13,6 +13,19 @@
   const SCOPES = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file';
   const ALLOWED_ACCOUNT_HASHES = new Set(['8593d642f79e2a03a8a75ae91096d00d77e4f82f5149283684b6605fc9821a9e','db9c91e0d2956a89a70d9683b4a2a4d048b9cde255f861425342fe877b48339c']);
   const DATA_FILE = 'Amanda_Clinica_Dados.json';
+  const SecureVault = window.SecureJsonVault.forApp({
+    appId: 'amanda-clinica',
+    appName: 'Amanda Estetica',
+    isSensitive: value => !!(value && typeof value === 'object' && value.appId === 'amanda-clinica' && value.dataByProfile)
+  });
+  const IntegrationVault = window.SecureJsonVault.forApp({
+    appId: 'borion-ecosystem-integration',
+    appName: 'Integracao segura Borion',
+    isSensitive: value => !!(value && typeof value === 'object' && (
+      value.schema === 'borion.interop.snapshot' ||
+      value.schema === 'borion.interop.ack'
+    ))
+  });
   const USER_KEY = 'amanda_clinica_gdrive_user';
   const DATA_FILE_ID_PREFIX = 'amanda_clinica_gdrive_data_file_';
   const FOLDER_PREFIX = 'amanda_clinica_gdrive_folder_';
@@ -33,6 +46,7 @@
   const FORCESAVE_SLOTS = 40;
   const ROTATING_FILE_ID_PREFIX = 'amanda_clinica_gdrive_rotating_file_';
   const ROTATING_SLOT_INDEX_PREFIX = 'amanda_clinica_gdrive_rotating_slot_';
+  const ENCRYPTED_BACKUPS_MARKER_PREFIX = 'amanda_clinica_encrypted_backups_v1_';
 
   /* ================================================================
      V1.20.0 — CORREÇÃO CRÍTICA DE PROTEÇÃO DE DADOS
@@ -124,7 +138,7 @@
      REVISÃO (metadados, ver readRemoteAuthoritative) do arquivo principal.
      Se mudou, é porque outro dispositivo salvou — busca o conteúdo completo
      e atualiza a tela sozinho, sem precisar sair do app e entrar de novo. */
-  const LIVE_POLL_INTERVAL_MS = 6 * 1000;
+  const LIVE_POLL_INTERVAL_MS = 1200;
   let livePollTimer = null;
   let liveCheckInFlight = false;
 
@@ -302,6 +316,8 @@
       Auth.signOut();
       throw new Error('Esta conta Google não está autorizada a acessar o Amanda Estética.');
     }
+    await SecureVault.bindOwner(user.sub);
+    await IntegrationVault.bindOwner('borion-ecosystem-integration-v1');
     return user;
   }
 
@@ -597,7 +613,8 @@
     const metadataObj = { name, parents: [parentId], mimeType: 'application/json' };
     if (appProperties) metadataObj.appProperties = appProperties;
     const metadata = JSON.stringify(metadataObj);
-    const content = JSON.stringify(object, null, 2);
+    const protectedObject = await SecureVault.protect(object);
+    const content = JSON.stringify(protectedObject, null, 2);
     const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
     const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,size', {
       method: 'POST',
@@ -609,10 +626,11 @@
   }
 
   async function updateJsonFile(fileId, object) {
+    const protectedObject = await SecureVault.protect(object);
     const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,modifiedTime,size`, {
       method: 'PATCH',
       headers: await headers(true),
-      body: JSON.stringify(object, null, 2)
+      body: JSON.stringify(protectedObject, null, 2)
     });
     if (!response.ok) throw new Error('Falha ao salvar os dados no Google Drive.');
     return await response.json();
@@ -626,7 +644,8 @@
     if (!appProperties) return await updateJsonFile(fileId, object);
     const boundary = `amanda_${Date.now()}`;
     const metadata = JSON.stringify({ appProperties });
-    const content = JSON.stringify(object, null, 2);
+    const protectedObject = await SecureVault.protect(object);
+    const content = JSON.stringify(protectedObject, null, 2);
     const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
     const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&fields=id,name,modifiedTime,size`, {
       method: 'PATCH',
@@ -642,7 +661,7 @@
       headers: await headers()
     });
     if (!response.ok) throw new Error('Falha ao carregar o arquivo do Google Drive.');
-    return await response.json();
+    return await SecureVault.open(await response.json());
   }
 
   async function getMeta(fileId) {
@@ -803,6 +822,32 @@
   async function loadAuthoritative(options = {}) {
     const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
     const remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
+    if (remote.exists && SecureVault.needsMigration()) {
+      await writeRotatingSnapshot(folderId, 'prewrite', PRESAVE_SNAPSHOT_SLOTS, remote.state);
+      const counts = window.DataGuard.collectRecordCounts(remote.state);
+      const appProperties = {
+        rev: String(Number(remote.state.databaseRevision) || 0),
+        wsid: remote.state.workspaceId || '',
+        ...encodeCountsToProps(counts)
+      };
+      await updateJsonFileWithMeta(remote.meta.id, remote.state, appProperties);
+      const confirmed = await readJsonFile(remote.meta.id);
+      if (!window.DataGuard.isValidClinicSchema(confirmed)) {
+        throw new DriveGuardError('ENCRYPTION_MIGRATION_FAILED', 'A conversao da base da Amanda para o formato criptografado nao foi confirmada. O backup protegido foi preservado e a abertura foi bloqueada.', {});
+      }
+      SecureVault.markMigrated();
+      remote.state = confirmed;
+      remote.source = 'content-encrypted-migration';
+    }
+    const backupMarker = ENCRYPTED_BACKUPS_MARKER_PREFIX + folderId;
+    if (remote.exists && localStorage.getItem(backupMarker) !== '1') {
+      try {
+        remote.migratedBackupCount = await migrateBackupSnapshotsEncryption(folderId);
+        localStorage.setItem(backupMarker, '1');
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] A base principal esta protegida, mas a verificacao dos backups antigos sera repetida no proximo acesso:', error);
+      }
+    }
     if (remote.exists) writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
     return { ...remote, folderId };
   }
@@ -919,6 +964,24 @@
     return Array.isArray(result.files) ? result.files : [];
   }
 
+  async function migrateBackupSnapshotsEncryption(folderId) {
+    const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+    const files = await listAllChildren(backups.id, 'application/json');
+    let migrated = 0;
+    for (const file of files) {
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
+      if (!response.ok) throw new Error(`Falha ao verificar a criptografia do backup ${file.name}.`);
+      const raw = await response.json();
+      if (SecureVault.isEnvelope(raw) || !SecureVault.isSensitive(raw)) continue;
+      await updateJsonFile(file.id, raw);
+      const verifyResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
+      const verified = verifyResponse.ok ? await verifyResponse.json() : null;
+      if (!SecureVault.isEnvelope(verified)) throw new Error(`A criptografia do backup ${file.name} nao foi confirmada.`);
+      migrated += 1;
+    }
+    return migrated;
+  }
+
   /* Seção 12 — recuperação: lista TODOS os arquivos da pasta "Backups" (os
      três rodízios: autosave, forcesave e prewrite) para a pessoa escolher um
      ponto de restauração, com data e nome visíveis antes de abrir qualquer
@@ -1029,6 +1092,7 @@
       this.stopLivePollLoop();
       if (!this.isConfigured()) return;
       livePollTimer = setInterval(() => { this.checkForRemoteUpdate(); }, LIVE_POLL_INTERVAL_MS);
+      setTimeout(() => { this.checkForRemoteUpdate(); }, 180);
     },
     stopLivePollLoop() {
       if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
@@ -1109,6 +1173,8 @@
       if (!this.isConfigured()) return await this.connect(interactive);
       await Auth.ensureToken(interactive);
       const user = TEST_MODE ? (Auth.user || { sub: 'test-user', email: 'test@example.invalid' }) : await assertAuthorizedUser(await Auth.fetchUser());
+      await SecureVault.bindOwner(user.sub);
+      await IntegrationVault.bindOwner('borion-ecosystem-integration-v1');
       const folderId = getFolderId();
       await ensureAppFolders(folderId);
       return { user, folderId };
@@ -1187,12 +1253,22 @@
     async writeIntegrationJson(name, object) {
       const folderId = await this.integrationFolderId();
       const existing = await resolveIntegrationFile(folderId, name, object);
-      return await updateJsonFile(existing.id, object);
+      const result = await updateJsonFile(existing.id, await IntegrationVault.protect(object));
+      if (IntegrationVault.needsMigration()) IntegrationVault.markMigrated();
+      return result;
     },
     async readIntegrationJson(name) {
       const folderId = await this.integrationFolderId();
       const existing = await resolveIntegrationFile(folderId, name, null);
-      return existing ? await readJsonFile(existing.id) : null;
+      if (!existing) return null;
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, { headers: await headers() });
+      if (!response.ok) throw new Error('Falha ao carregar a integracao do Google Drive.');
+      const value = await IntegrationVault.open(await response.json());
+      if (IntegrationVault.needsMigration()) {
+        await updateJsonFile(existing.id, await IntegrationVault.protect(value));
+        IntegrationVault.markMigrated();
+      }
+      return value;
     },
 
     disconnect() {

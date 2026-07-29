@@ -357,7 +357,7 @@ function renderFinance() {
     return `<section class="settings-backup-block">
       <header><span class="settings-backup-icon">${icon('upload',19)}</span><div><h3>Google Drive</h3><p>${googleConfigured?'Conta e pasta privadas conectadas.':'Conecte a conta privada da clínica.'}</p></div></header>
       <div class="ios-cloud-card">
-        <div class="ios-cloud-status"><span class="sync-dot ${googleConfigured?'online':''}"></span><div><strong>${googleConfigured?'Google Drive conectado':'Google Drive não conectado'}</strong><small>${googleUser?`${esc(googleUser.email)}${lastGoogle?` · último envio ${formatDateTime(lastGoogle)}`:''}`:'O aplicativo continua funcionando localmente quando estiver offline.'}</small></div></div>
+        <div class="ios-cloud-status"><span class="sync-dot ${googleConfigured?'online':''}"></span><div><strong>${googleConfigured?'Google Drive conectado':'Google Drive não conectado'}</strong><small>${googleUser?`${esc(googleUser.email)}${lastGoogle?` · último envio ${formatDateTime(lastGoogle)}`:''}`:'Internet obrigatória. Nenhuma base clínica é guardada neste dispositivo.'}</small></div></div>
         <div class="ios-action-grid">
           <button type="button" class="btn primary" data-action="connect-google">${icon('folder',17)} ${googleConfigured?'Trocar pasta':'Conectar'}</button>
           <button type="button" class="btn secondary" data-action="sync-google">${icon('refresh',17)} Sincronizar</button>
@@ -389,12 +389,9 @@ function renderFinance() {
 
   function renderSettingsManualBackup() {
     return `<section class="settings-backup-block">
-      <header><span class="settings-backup-icon">${icon('save',19)}</span><div><h3>Backup manual</h3><p>Exporte, importe e restaure cópias independentes da base.</p></div></header>
+      <header><span class="settings-backup-icon">${icon('save',19)}</span><div><h3>Backups na nuvem</h3><p>Crie e restaure cópias criptografadas no Google Drive.</p></div></header>
       <div class="ios-settings-list settings-action-list">
-        <button type="button" data-action="create-local-backup"><span class="ios-setting-icon">${icon('save',18)}</span><span><strong>Criar backup local</strong><small>Gera uma cópia imediata neste dispositivo</small></span>${icon('chevron',18)}</button>
-        <button type="button" data-action="export-json"><span class="ios-setting-icon">${icon('download',18)}</span><span><strong>Exportar JSON</strong><small>Baixar uma cópia independente</small></span>${icon('chevron',18)}</button>
-        <button type="button" data-action="import-json"><span class="ios-setting-icon">${icon('upload',18)}</span><span><strong>Importar JSON</strong><small>Cria backup preventivo antes de substituir a base</small></span>${icon('chevron',18)}</button>
-        <button type="button" data-action="show-backups"><span class="ios-setting-icon">${icon('clock',18)}</span><span><strong>Backups locais</strong><small>Consultar e restaurar cópias deste dispositivo</small></span>${icon('chevron',18)}</button>
+        <button type="button" data-action="create-local-backup"><span class="ios-setting-icon">${icon('save',18)}</span><span><strong>Criar backup no Drive</strong><small>Gera uma cópia criptografada na nuvem</small></span>${icon('chevron',18)}</button>
         <button type="button" data-action="show-drive-backups"><span class="ios-setting-icon">${icon('folder',18)}</span><span><strong>Backups no Google Drive</strong><small>Consultar e restaurar cópias salvas na nuvem</small></span>${icon('chevron',18)}</button>
       </div>
     </section>`;
@@ -416,7 +413,7 @@ function renderFinance() {
   function renderSettingsBackupSecurity() {
     return `<div class="settings-section-stack">
       <section class="settings-section-intro"><span class="eyebrow">Continuidade e proteção</span><h3>Backup e segurança</h3><p>Todos os recursos de sincronização, restauração e proteção estão reunidos aqui.</p></section>
-      <div class="settings-backup-grid">${renderSettingsGoogleDrive()}${renderSettingsFolderBackup()}${renderSettingsManualBackup()}${renderSettingsSecurity()}</div>
+      <div class="settings-backup-grid">${renderSettingsGoogleDrive()}${renderSettingsManualBackup()}${renderSettingsSecurity()}</div>
     </div>`;
   }
 

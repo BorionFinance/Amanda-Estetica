@@ -324,21 +324,20 @@ let STATE = null;
       authorizeIntentionalDeletionFromBaseline(options.intentionalDeletionBeforeCounts, reason || 'exclusao-confirmada');
     }
     await ClinicStorage.save(STATE);
-    // V1.20.0 — nenhuma gravação remota é agendada enquanto a base do Google
-    // Drive não estiver carregada, validada e hidratada nesta sessão. O dado
-    // ainda fica salvo neste navegador (linha acima); só a sincronização com
-    // o Drive/pasta é que espera a conexão voltar.
+    // Nenhuma gravação remota é iniciada enquanto a base do Google Drive não
+    // estiver carregada, validada e hidratada nesta sessão. ClinicStorage é
+    // apenas memória de execução; nada clínico fica persistido no aparelho.
     if (window.AppLifecycle && !window.AppLifecycle.canWrite()) {
       updateSaveStatus('Sem conexão · alteração aguardando sincronização', 'warn');
       if (window.GoogleDriveClinic?.isConfigured?.() && data().settings.autosaveGoogle !== false) {
         GoogleDriveClinic.markAutosaveDirty?.();
         scheduleGoogleDriveSave(3000);
       }
-      toast('Sem conexão com o Google Drive. A alteração foi preservada e será reenviada quando a conexão voltar.', 'warn');
+      toast('Sem conexão com o Google Drive. A alteração continua somente nesta tela e será reenviada quando a conexão voltar.', 'warn');
       return;
     }
     if (window.GoogleDriveClinic?.isConfigured?.()) GoogleDriveClinic.markAutosaveDirty();
-    updateSaveStatus('Salvo localmente', 'ok');
+    updateSaveStatus('Alteração pronta · enviando ao Google Drive', 'warn');
     if (data().settings.autosaveFolder !== false && options.folder !== false) scheduleFolderSave();
     if (data().settings.autosaveGoogle !== false && options.google !== false) scheduleGoogleDriveSave();
   }
@@ -384,7 +383,7 @@ let STATE = null;
   }
   window.hasPendingGoogleDriveSave = hasPendingGoogleDriveSave;
 
-  function scheduleGoogleDriveSave(delay = 1900) {
+  function scheduleGoogleDriveSave(delay = 180) {
     googleSaveDirty = true;
     clearTimeout(googleSaveTimer);
     clearTimeout(googleSaveRetryTimer);
@@ -442,7 +441,7 @@ let STATE = null;
             updateSaveStatus('Pasta do Google Drive incorreta', 'warn');
             toast(error.message, 'error');
           } else {
-            updateSaveStatus('Salvo local · Google pendente', 'warn');
+            updateSaveStatus('Alteração na tela · Google pendente', 'warn');
             googleSaveRetryTimer = setTimeout(() => {
               googleSaveRetryTimer = null;
               if (googleSaveDirty) scheduleGoogleDriveSave(0);
@@ -452,8 +451,10 @@ let STATE = null;
           googleSaveInFlight = false;
         }
       };
-      if ('requestIdleCallback' in window) googleSaveIdle = requestIdleCallback(run, { timeout: 3000 });
-      else setTimeout(run, 0);
+      // O banco leve começa a ser enviado imediatamente após o pequeno
+      // debounce. Esperar requestIdleCallback acrescentava até 3 s antes de
+      // a rede começar, justamente no caminho de clientes e lançamentos.
+      void run();
     }, Math.max(0, Number(delay) || 0));
   }
 
