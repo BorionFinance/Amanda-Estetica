@@ -69,7 +69,7 @@ let RESIZE_FRAME = 0;
     }
 
     window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});
-    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.22.1').catch(console.warn);
+    if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js?v=1.22.2').catch(console.warn);
   }
 
   document.addEventListener('pointerdown', event => {

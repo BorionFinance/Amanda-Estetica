@@ -17,6 +17,7 @@
   const Vault = window.SecureJsonVault.forApp({
     appId: 'amanda-clinica',
     appName: 'Amanda Estetica',
+    dialogTheme: 'amanda',
     isSensitive: value => !!(value && typeof value === 'object' && value.appId === 'amanda-clinica' && value.dataByProfile)
   });
 

@@ -16,11 +16,13 @@
   const SecureVault = window.SecureJsonVault.forApp({
     appId: 'amanda-clinica',
     appName: 'Amanda Estetica',
+    dialogTheme: 'amanda',
     isSensitive: value => !!(value && typeof value === 'object' && value.appId === 'amanda-clinica' && value.dataByProfile)
   });
   const IntegrationVault = window.SecureJsonVault.forApp({
     appId: 'borion-ecosystem-integration',
     appName: 'Integracao segura Borion',
+    dialogTheme: 'amanda',
     isSensitive: value => !!(value && typeof value === 'object' && (
       value.schema === 'borion.interop.snapshot' ||
       value.schema === 'borion.interop.ack'

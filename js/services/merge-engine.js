@@ -2,7 +2,7 @@
   'use strict';
 
   /**
-   * Amanda Estética — Conciliação de três vias (v1.22.1).
+   * Amanda Estética — Conciliação de três vias (v1.22.2).
    *
    * Antes desta versão, `saveAuthoritative` (ver google-drive.js) gravava a
    * base inteira desta sessão por cima do que estava no Google Drive sempre
