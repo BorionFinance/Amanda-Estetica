@@ -1,596 +1,1446 @@
+
 (() => {
   'use strict';
-  const DEFAULT_CLIENT_ID='946105310952-gp143h81mm3704lrq3877hsie49njgak.apps.googleusercontent.com';
-  const DEFAULT_API_KEY='AIzaSyDhIJJ7XgvJC1i6NzylSZI2vs3RuvuRjn4';
-  const DEFAULT_PROJECT_NUMBER='946105310952';
-  const SCOPES='openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file';
-  const ALLOWED_ACCOUNT_HASHES=new Set(['134e106b0600045a12cf9722057a06fad862df6d45b5fece1eb7180729569ea2','db9c91e0d2956a89a70d9683b4a2a4d048b9cde255f861425342fe877b48339c']);
-  const DATA_FILE='Marco_Iris_Dados.json';
-  const SecureVault=window.SecureJsonVault.forApp({
-    appId:'marco-iris-tecnologia',
-    appName:'Marco Iris Tecnologia',
-    dialogTheme:'marco',
-    isSensitive:value=>!!(value&&typeof value==='object'&&value.appId==='marco-iris-tecnologia'&&value.dataByProfile)
-  });
-  const IntegrationVault=window.SecureJsonVault.forApp({
-    appId:'borion-ecosystem-integration',
-    appName:'Integracao segura Borion',
-    dialogTheme:'marco',
-    isSensitive:value=>!!(value&&typeof value==='object'&&(value.schema==='borion.interop.snapshot'||value.schema==='borion.interop.ack'))
-  });
-  const DATA_FILE_ID_PREFIX='marco_iris_v240_gdrive_data_file_';
-  const USER_KEY='marco_iris_v240_gdrive_user';
-  const ROOT_PREFIX='marco_iris_v240_gdrive_root_';
-  const STRUCT_PREFIX='marco_iris_v240_gdrive_structure_';
-  const LAST_SAVE='marco_iris_v240_last_google_save';
-  const FOLDERS={data:'Dados',backups:'Backups',photos:'Fotos_OS',pdfs:'Ordens_de_Servico',attachments:'Anexos',integration:'Borion_Integracoes'};
-  const AUTOSAVE_SLOTS=20;
-  const FORCESAVE_SLOTS=20;
-  const AUTOSAVE_INTERVAL_MS=60*1000;
-  const BACKUP_SLOT_PREFIX='marco_iris_v240_backup_slot_';
-  const ENCRYPTED_BACKUPS_MARKER_PREFIX='marco_iris_encrypted_backups_v1_';
-  const ENCRYPTED_BACKUPS_QUEUE_PREFIX='marco_iris_encrypted_backups_queue_v2_';
-  const INSTALLATION_FILE='Marco_Iris_Instalacao.json';
-  let structurePromise=null;
-  let connectionPromise=null;
-  let primaryEncryptionTimer=null;
-  let backupEncryptionTimer=null;
-  let encryptionMigrationInFlight=false;
-  const integrationFileIds=new Map();
-  const integrationFilePromises=new Map();
-  const dataFilePromises=new Map();
 
+  /*
+    Credenciais do mesmo projeto Google já usado pelo Borion.
+    Como OAuth web autoriza por ORIGEM, um novo repositório no mesmo
+    https://borionfinance.github.io pode reutilizar a configuração.
+  */
+  const CLIENT_ID = '946105310952-gp143h81mm3704lrq3877hsie49njgak.apps.googleusercontent.com';
+  const API_KEY = 'AIzaSyDhIJJ7XgvJC1i6NzylSZI2vs3RuvuRjn4';
+  const PROJECT_NUMBER = '946105310952';
+  const SCOPES = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file';
+  const ALLOWED_ACCOUNT_HASHES = new Set(['8593d642f79e2a03a8a75ae91096d00d77e4f82f5149283684b6605fc9821a9e','db9c91e0d2956a89a70d9683b4a2a4d048b9cde255f861425342fe877b48339c']);
+  const DATA_FILE = 'Amanda_Clinica_Dados.json';
+  const SecureVault = window.SecureJsonVault.forApp({
+    appId: 'amanda-clinica',
+    appName: 'Amanda Estetica',
+    dialogTheme: 'amanda',
+    isSensitive: value => !!(value && typeof value === 'object' && value.appId === 'amanda-clinica' && value.dataByProfile)
+  });
+  const IntegrationVault = window.SecureJsonVault.forApp({
+    appId: 'borion-ecosystem-integration',
+    appName: 'Integracao segura Borion',
+    dialogTheme: 'amanda',
+    isSensitive: value => !!(value && typeof value === 'object' && (
+      value.schema === 'borion.interop.snapshot' ||
+      value.schema === 'borion.interop.ack'
+    ))
+  });
+  const USER_KEY = 'amanda_clinica_gdrive_user';
+  const DATA_FILE_ID_PREFIX = 'amanda_clinica_gdrive_data_file_';
+  const FOLDER_PREFIX = 'amanda_clinica_gdrive_folder_';
+  const SUBFOLDER_PREFIX = 'amanda_clinica_gdrive_subfolder_';
+  const INTEGRATION_FILE_PREFIX = 'amanda_clinica_gdrive_integration_file_';
+  const STRUCTURE_PREFIX = 'amanda_clinica_gdrive_structure_';
+  const APP_FOLDERS = Object.freeze({ backups: 'Backups', integration: 'Borion_Integracoes', photos: 'Fotos_Clientes' });
+  /* V1.16.0 — mecânica de backup copiada do Borion Finance: em vez de um arquivo
+     novo e único a cada ação (que crescia pra sempre), dois rodízios de slots
+     fixos, cada um sobrescrevendo o mais antigo quando dá a volta:
+     - autosave-1.json ... autosave-20.json: 1 gravação por minuto, só quando algo
+       mudou desde a última vez (ver markAutosaveDirty/runAutosaveTick).
+     - forcesave-1.json ... forcesave-40.json: um rodízio à parte, usado nos
+       momentos em que a própria pessoa pede um salvamento (conectar pela
+       primeira vez, "Salvar agora", sincronizar manualmente). */
+  const AUTOSAVE_INTERVAL_MS = 60 * 1000;
+  const AUTOSAVE_SLOTS = 20;
+  const FORCESAVE_SLOTS = 40;
+  const ROTATING_FILE_ID_PREFIX = 'amanda_clinica_gdrive_rotating_file_';
+  const ROTATING_SLOT_INDEX_PREFIX = 'amanda_clinica_gdrive_rotating_slot_';
+  const ENCRYPTED_BACKUPS_MARKER_PREFIX = 'amanda_clinica_encrypted_backups_v1_';
+  const ENCRYPTED_BACKUPS_QUEUE_PREFIX = 'amanda_clinica_encrypted_backups_queue_v2_';
 
-  function jsonClone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
-  function canonical(value){if(Array.isArray(value))return value.map(canonical);if(value&&typeof value==='object'){const out={};Object.keys(value).sort().forEach(k=>{if(k!=='integrity')out[k]=canonical(value[k]);});return out;}return value;}
-  async function stateChecksum(state){const text=JSON.stringify(canonical(state));const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');}
-  async function contentChecksum(state){const clean=jsonClone(state||{});delete clean.driveSync;delete clean.updatedAt;delete clean.integrity;const bridge=clean?.interconnections?.borion;if(bridge&&typeof bridge==='object'){delete bridge.deviceId;delete bridge.lastPublishAt;delete bridge.lastPublishStatus;delete bridge.lastError;}const text=JSON.stringify(canonical(clean));const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');}
-  function valueEqual(a,b){return JSON.stringify(canonical(a))===JSON.stringify(canonical(b));}
-  function itemKey(item,index=0){return String(item?.id||item?.code||item?.key||item?.sourceRecordId||item?.aggregateId||`__index_${index}`);}
-  function mergeArrayDelta(baseArr,localArr,remoteArr){
-    const base=Array.isArray(baseArr)?baseArr:[],local=Array.isArray(localArr)?localArr:[],remote=Array.isArray(remoteArr)?remoteArr:[];
-    const bm=new Map(base.map((item,index)=>[itemKey(item,index),item])),lm=new Map(local.map((item,index)=>[itemKey(item,index),item])),rm=new Map(remote.map((item,index)=>[itemKey(item,index),jsonClone(item)]));
-    const order=remote.map((item,index)=>itemKey(item,index));
-    for(const [key,baseItem] of bm){
-      if(!lm.has(key)){rm.delete(key);continue;}
-      const localItem=lm.get(key);if(!valueEqual(localItem,baseItem))rm.set(key,jsonClone(localItem));
+  /* ================================================================
+     V1.20.0 — CORREÇÃO CRÍTICA DE PROTEÇÃO DE DADOS
+     A partir daqui: Google Drive é a fonte oficial da verdade. Nenhuma
+     gravação no arquivo principal acontece sem reconferir, na hora, a
+     revisão remota e sem comparar a contagem de registros com a última
+     base confiável conhecida. Ver AppLifecycle (app-lifecycle.js) e
+     DataGuard (data-guard.js).
+     ================================================================ */
+  const PRESAVE_SNAPSHOT_SLOTS = 30; // "Snapshots/prewrite-N.json" — cópia do arquivo principal
+                                      // tirada IMEDIATAMENTE ANTES de cada gravação que o substitui.
+  const WORKSPACE_KEY_PREFIX = 'amanda_clinica_gdrive_workspace_';
+  const LAST_GOOD_COUNTS_PREFIX = 'amanda_clinica_last_known_good_counts_';
+
+  class DriveGuardError extends Error {
+    constructor(code, message, details = {}) {
+      super(message);
+      this.name = 'DriveGuardError';
+      this.code = code;
+      this.details = details;
     }
-    for(const [key,localItem] of lm){if(!bm.has(key)){rm.set(key,jsonClone(localItem));if(!order.includes(key))order.push(key);}}
-    return [...order.filter((key,index)=>order.indexOf(key)===index&&rm.has(key)).map(key=>rm.get(key)),...[...rm.entries()].filter(([key])=>!order.includes(key)).map(([,item])=>item)];
   }
-  function mergeObjectDelta(base,local,remote){
-    if(Array.isArray(base)||Array.isArray(local)||Array.isArray(remote))return mergeArrayDelta(base,local,remote);
-    if(!local||typeof local!=='object'||!remote||typeof remote!=='object'||!base||typeof base!=='object')return !valueEqual(local,base)?jsonClone(local):jsonClone(remote);
-    const out=jsonClone(remote);
-    for(const key of new Set([...Object.keys(base),...Object.keys(local)])){
-      if(!(key in local)){delete out[key];continue;}
-      if(!(key in base)){out[key]=jsonClone(local[key]);continue;}
-      if(valueEqual(local[key],base[key]))continue;
-      if(local[key]&&typeof local[key]==='object'&&base[key]&&typeof base[key]==='object'&&remote[key]&&typeof remote[key]==='object')out[key]=mergeObjectDelta(base[key],local[key],remote[key]);
-      else out[key]=jsonClone(local[key]);
+
+  function workspaceStorageKey(folderId) { return `${WORKSPACE_KEY_PREFIX}${folderId}`; }
+  function readStoredWorkspaceId(folderId) { return localStorage.getItem(workspaceStorageKey(folderId)) || null; }
+  function writeStoredWorkspaceId(folderId, workspaceId) { if (workspaceId) localStorage.setItem(workspaceStorageKey(folderId), workspaceId); }
+
+  function lastGoodCountsKey(workspaceId) { return `${LAST_GOOD_COUNTS_PREFIX}${workspaceId}`; }
+  function readLastKnownGoodCounts(workspaceId) {
+    if (!workspaceId) return null;
+    try { return JSON.parse(localStorage.getItem(lastGoodCountsKey(workspaceId)) || 'null'); }
+    catch (_) { return null; }
+  }
+  function writeLastKnownGoodCounts(workspaceId, counts) {
+    if (!workspaceId || !counts) return;
+    try { localStorage.setItem(lastGoodCountsKey(workspaceId), JSON.stringify(counts)); } catch (_) {}
+  }
+
+  function newUuid() {
+    if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+    return `ws_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  /* V1.20.1 — PERFORMANCE: revisão/workspace/contagem também ficam gravados
+     como `appProperties` (metadados) no próprio arquivo do Drive, cada
+     coleção crítica como uma propriedade pequena e independente. Isso deixa
+     a checagem de segurança (revisão + contagem suspeita) possível com uma
+     única chamada de METADADOS — sem baixar o conteúdo inteiro (que inclui
+     todas as fotos em base64 e pode ter vários MB). O conteúdo completo só
+     é baixado quando é realmente preciso (abrir a base, ou tirar um
+     snapshot numa gravação "cuidadosa"). */
+  function encodeCountsToProps(counts) {
+    const props = {};
+    (window.DataGuard?.CRITICAL_COLLECTIONS || []).forEach(key => { props[`c_${key}`] = String(counts?.[key] || 0); });
+    return props;
+  }
+  function decodeCountsFromProps(props) {
+    if (!props) return null;
+    const collections = window.DataGuard?.CRITICAL_COLLECTIONS || [];
+    const counts = {};
+    let total = 0;
+    for (const key of collections) {
+      const raw = props[`c_${key}`];
+      if (raw === undefined) return null; // propriedades incompletas (arquivo antigo) -> não confiar, cai no fallback completo
+      const n = Number(raw) || 0;
+      counts[key] = n;
+      total += n;
     }
-    return out;
+    counts.__total = total;
+    return counts;
   }
-  function rebaseLocalChanges(baseState,localState,remoteState){
-    if(!baseState||!localState||!remoteState)throw new Error('Não foi possível reconciliar as alterações entre dispositivos sem a base de sincronização.');
-    const merged=mergeObjectDelta(baseState,localState,remoteState);
-    merged.driveSync=jsonClone(remoteState.driveSync||{});
-    merged.updatedAt=String(localState.updatedAt||remoteState.updatedAt||new Date().toISOString());
-    ensureCompanyId(merged);
-    return merged;
+
+  const resolvedFolders = new Map();
+  const resolvedIntegrationFiles = new Map();
+  const folderInflight = new Map();
+  const integrationFileInflight = new Map();
+  const structureInflight = new Map();
+  const dataFileInflight = new Map();
+  const resolvedStructures = new Map();
+  let connectionInflight = null;
+  let autosaveTimer = null;
+  let autosaveDirty = false;
+  let autosaveInFlight = false;
+  let autosaveStateGetter = null;
+  let primaryEncryptionTimer = null;
+  let backupEncryptionTimer = null;
+  let encryptionMigrationInFlight = false;
+
+  /* V1.21.0 — "atualização ao vivo" entre dispositivos, mesma ideia que foi
+     construída para o Borion Finance: a cada LIVE_POLL_INTERVAL_MS, se este
+     dispositivo não tem nenhuma gravação local pendente, confere só a
+     REVISÃO (metadados, ver readRemoteAuthoritative) do arquivo principal.
+     Se mudou, é porque outro dispositivo salvou — busca o conteúdo completo
+     e atualiza a tela sozinho, sem precisar sair do app e entrar de novo. */
+  const LIVE_POLL_INTERVAL_MS = 1200;
+  let livePollTimer = null;
+  let liveCheckInFlight = false;
+
+  /* V1.21.2 — exclusões confirmadas pelo usuário não podem ser confundidas com
+     uma base vazia/corrompida. A autorização abaixo é curta, fica só em memória
+     e cobre EXATAMENTE a sequência de contagens antes -> depois informada pela
+     própria ação de exclusão. Ela nunca libera uma queda diferente da esperada. */
+  let pendingIntentionalDeletion = null;
+  const INTENTIONAL_DELETION_TTL_MS = 2 * 60 * 1000;
+
+  function criticalCountsEqual(left, right) {
+    if (!left || !right) return false;
+    return (window.DataGuard?.CRITICAL_COLLECTIONS || []).every(key =>
+      (Number(left[key]) || 0) === (Number(right[key]) || 0)
+    );
   }
-  const SOURCE_COLLECTIONS=['clients','serviceOrders','orderItems','payments','products','services','supplies','stockMovements','appointments','consents'];
-  function sourceCount(state){let total=0;for(const d of Object.values(state?.dataByProfile||{})){if(!d||typeof d!=='object')continue;for(const k of SOURCE_COLLECTIONS)total+=Array.isArray(d[k])?d[k].length:0;}return total;}
-  function explicitLocalDeletionCoverage(localState,remoteState){
-    const tombstones=localState?.interconnections?.borion?.tombstones;
-    if(!Array.isArray(tombstones)||!tombstones.length)return false;
-    const tombstoneKeys=new Set(tombstones.flatMap(item=>[String(item?.sourceRecordId||''),String(item?.entityId||''),String(item?.aggregateId||'')]).filter(Boolean));
-    let missing=0;
-    for(const [profileId,remoteData] of Object.entries(remoteState?.dataByProfile||{})){
-      const localData=localState?.dataByProfile?.[profileId]||{};
-      for(const collection of SOURCE_COLLECTIONS){
-        const localIds=new Set((localData?.[collection]||[]).map(item=>String(item?.id||item?.code||'')).filter(Boolean));
-        for(const item of (remoteData?.[collection]||[])){
-          const entityId=String(item?.code||item?.id||'').trim();
-          if(entityId&&localIds.has(entityId))continue;
-          missing++;
-          if(collection!=='payments'||!entityId)return false;
-          const normalized=String(item?.type||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-          const kind=normalized==='despesa'?'expense':'receipt';
-          const sourceRecordId=`marco:${kind}:${entityId}`;
-          if(!tombstoneKeys.has(sourceRecordId)&&!tombstoneKeys.has(entityId))return false;
-        }
-      }
+
+  function hasRealCountDrop(beforeCounts, afterCounts) {
+    return (window.DataGuard?.CRITICAL_COLLECTIONS || []).some(key =>
+      (Number(afterCounts?.[key]) || 0) < (Number(beforeCounts?.[key]) || 0)
+    );
+  }
+
+  function authorizeIntentionalDeletion(beforeCounts, afterCounts, reason = 'exclusao-confirmada') {
+    if (!beforeCounts || !afterCounts || !hasRealCountDrop(beforeCounts, afterCounts)) return false;
+    const now = Date.now();
+    const current = pendingIntentionalDeletion;
+    if (current && current.expiresAt > now && criticalCountsEqual(current.afterCounts, beforeCounts)) {
+      current.afterCounts = JSON.parse(JSON.stringify(afterCounts));
+      current.reason = `${current.reason} + ${reason}`;
+      current.expiresAt = now + INTENTIONAL_DELETION_TTL_MS;
+      return true;
     }
-    return missing>0;
-  }
-  function companyIdOf(state){return String(state?.interconnections?.borion?.companyInstanceId||state?.interconnections?.borion?.instanceId||'').trim();}
-  function ensureCompanyId(state){
-    if(!state.interconnections||typeof state.interconnections!=='object')state.interconnections={};
-    if(!state.interconnections.borion||typeof state.interconnections.borion!=='object')state.interconnections.borion={};
-    const b=state.interconnections.borion;let id=String(b.companyInstanceId||b.instanceId||'').trim();
-    if(!id)id=(globalThis.crypto?.randomUUID?.()||('company_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2)));
-    b.companyInstanceId=id;b.instanceId=id;return id;
-  }
-  function validateOfficialState(state){
-    const errors=[];
-    if(!state||typeof state!=='object'||Array.isArray(state))errors.push('JSON raiz inválido.');
-    if(!Array.isArray(state?.profiles))errors.push('Lista de perfis ausente.');
-    if(!state?.dataByProfile||typeof state.dataByProfile!=='object')errors.push('dataByProfile ausente.');
-    if(state?.profiles?.length&&!Object.keys(state.dataByProfile||{}).length)errors.push('Perfis sem base de dados correspondente.');
-    return {valid:errors.length===0,errors,count:sourceCount(state)};
-  }
-  async function prepareOfficialState(state,remoteState=null){
-    const next=jsonClone(state||{});ensureCompanyId(next);const currentRev=Math.max(0,Number(next?.driveSync?.revision)||0),remoteRev=Math.max(0,Number(remoteState?.driveSync?.revision)||0);
-    next.driveSync=Object.assign({},next.driveSync||{},{schemaVersion:1,companyInstanceId:companyIdOf(next),revision:Math.max(currentRev,remoteRev)+1,previousRevision:remoteRev,updatedByDevice:window.MarcoBorionInterop?.getRuntimeStatus?.().deviceId||'',updatedAt:new Date().toISOString()});
-    next.updatedAt=new Date().toISOString();next.driveSync.checksum=await stateChecksum(next);return next;
-  }
-  function assertSafeReplacement(sessionState,remoteState){
-    const sessionCheck=validateOfficialState(sessionState),remoteCheck=validateOfficialState(remoteState);
-    if(!sessionCheck.valid)throw new Error('A sessão atual é inválida: '+sessionCheck.errors.join(' '));
-    if(!remoteCheck.valid)throw new Error('A base oficial do Drive é inválida: '+remoteCheck.errors.join(' '));
-    const sc=companyIdOf(sessionState),rc=companyIdOf(remoteState);
-    if(rc&&sc&&rc!==sc){const e=new Error('Conflito de instalação: o identificador oficial da empresa é diferente. Nenhum dado foi enviado.');e.code='COMPANY_INSTANCE_CONFLICT';throw e;}
-    const known=Math.max(0,Number(sessionState?.driveSync?.revision)||0),remoteRev=Math.max(0,Number(remoteState?.driveSync?.revision)||0);
-    if(remoteRev>known){const e=new Error('O Google Drive possui uma revisão mais nova. A alteração será conciliada com a base oficial.');e.code='REMOTE_NEWER';throw e;}
+    pendingIntentionalDeletion = {
+      beforeCounts: JSON.parse(JSON.stringify(beforeCounts)),
+      afterCounts: JSON.parse(JSON.stringify(afterCounts)),
+      reason: String(reason || 'exclusao-confirmada'),
+      createdAt: now,
+      expiresAt: now + INTENTIONAL_DELETION_TTL_MS
+    };
     return true;
   }
 
-  function config(){
-    return {clientId:DEFAULT_CLIENT_ID,apiKey:DEFAULT_API_KEY,projectNumber:DEFAULT_PROJECT_NUMBER};
+  function matchesIntentionalDeletion(remoteCounts, nextCounts) {
+    const auth = pendingIntentionalDeletion;
+    if (!auth) return false;
+    if (auth.expiresAt <= Date.now()) { pendingIntentionalDeletion = null; return false; }
+    return criticalCountsEqual(auth.beforeCounts, remoteCounts) &&
+      criticalCountsEqual(auth.afterCounts, nextCounts) &&
+      hasRealCountDrop(auth.beforeCounts, auth.afterCounts);
   }
-  function validateConfig(){const c=config();if(!c.clientId||!c.apiKey||!c.projectNumber)throw new Error('A conexão com o Google Drive não está disponível nesta versão do aplicativo.');return c;}
-  const Auth={token:'',expiresAt:0,user:null,gisLoaded:false,pickerLoaded:false,tokenClient:null,
-    loadScript(src){return new Promise((resolve,reject)=>{if(document.querySelector(`script[src="${src}"]`)){resolve();return;}const s=document.createElement('script');s.src=src;s.async=true;s.defer=true;s.onload=resolve;s.onerror=()=>reject(new Error('Não foi possível carregar os serviços do Google.'));document.head.appendChild(s);});},
-    async libraries(){if(!this.gisLoaded){await this.loadScript('https://accounts.google.com/gsi/client');this.gisLoaded=true;}if(!this.pickerLoaded){await this.loadScript('https://apis.google.com/js/api.js');await new Promise(r=>gapi.load('picker',r));this.pickerLoaded=true;}},
-    async request(interactive=false){const cfg=validateConfig();await this.libraries();return await new Promise((resolve,reject)=>{this.tokenClient=google.accounts.oauth2.initTokenClient({client_id:cfg.clientId,scope:SCOPES,callback:r=>{if(r.error){reject(new Error(`O Google recusou o acesso: ${r.error}`));return;}this.token=r.access_token;this.expiresAt=Date.now()+((r.expires_in||3300)*1000);resolve(this.token);},error_callback:e=>reject(new Error(e?.message||'Login com Google cancelado.'))});this.tokenClient.requestAccessToken({prompt:interactive?'select_account':''});});},
-    async ensure(interactive=false){if(this.token&&Date.now()<this.expiresAt-60000)return this.token;return await this.request(interactive);},
-    async fetchUser(){const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:`Bearer ${this.token}`}});if(!r.ok)throw new Error('Não foi possível confirmar a conta Google.');const i=await r.json();this.user={sub:i.sub,email:i.email,name:i.name||i.email,picture:i.picture||''};localStorage.setItem(USER_KEY,JSON.stringify(this.user));return this.user;},
-    cached(){if(this.user)return this.user;try{this.user=JSON.parse(localStorage.getItem(USER_KEY)||'null');}catch(_){this.user=null;}return this.user;},
-    signOut(){if(this.token){try{google.accounts.oauth2.revoke(this.token,()=>{});}catch(_){}}this.token='';this.expiresAt=0;this.user=null;localStorage.removeItem(USER_KEY);}
+
+  /* Nunca aplica uma atualização automática em cima de um modal, do diálogo de
+     confirmação, do seletor tipo roda (iOS) ou de um campo em edição — isso
+     poderia apagar o que a pessoa estava preenchendo. Se não for seguro agora,
+     a próxima checagem (poucos segundos depois) tenta de novo sozinha. */
+  function amandaLiveUpdateSafeToApplyNow() {
+    if (document.body.classList.contains('modal-open')) return false;
+    if (document.body.classList.contains('app-confirm-open')) return false;
+    if (document.querySelector('#picker-root .ios-wheel-sheet')) return false;
+    const active = document.activeElement;
+    if (active) {
+      const tag = (active.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+      if (active.isContentEditable) return false;
+    }
+    return true;
+  }
+
+  // Ativado SOMENTE pelos testes automatizados em /tests (ver __test abaixo).
+  // Nunca é ligado por nenhum caminho do próprio aplicativo em produção —
+  // existe só para permitir testar o pipeline de gravação/leitura guardado
+  // (saveAuthoritative/loadAuthoritative) contra um Google Drive simulado,
+  // sem depender de um fluxo real de login OAuth dentro do teste.
+  let TEST_MODE = false;
+
+  const Auth = {
+    token: '',
+    expiresAt: 0,
+    user: null,
+    gisLoaded: false,
+    pickerLoaded: false,
+    tokenClient: null,
+
+    loadScript(src) {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('Não foi possível carregar os serviços do Google.'));
+        document.head.appendChild(script);
+      });
+    },
+
+    async ensureLibraries() {
+      if (!this.gisLoaded) {
+        await this.loadScript('https://accounts.google.com/gsi/client');
+        this.gisLoaded = true;
+      }
+      if (!this.pickerLoaded) {
+        await this.loadScript('https://apis.google.com/js/api.js');
+        await new Promise(resolve => gapi.load('picker', resolve));
+        this.pickerLoaded = true;
+      }
+    },
+
+    requestToken(interactive = false) {
+      return new Promise((resolve, reject) => {
+        this.tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: response => {
+            if (response.error) {
+              reject(new Error(`O Google recusou o acesso: ${response.error}`));
+              return;
+            }
+            this.token = response.access_token;
+            this.expiresAt = Date.now() + ((response.expires_in || 3300) * 1000);
+            resolve(this.token);
+          },
+          error_callback: error => reject(new Error(error?.message || 'Login com Google cancelado.'))
+        });
+        this.tokenClient.requestAccessToken({ prompt: interactive ? 'select_account' : '' });
+      });
+    },
+
+    async ensureToken(interactive = false) {
+      if (this.token && Date.now() < this.expiresAt - 60000) return this.token;
+      await this.ensureLibraries();
+      return await this.requestToken(interactive);
+    },
+
+    async fetchUser() {
+      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${this.token}` }
+      });
+      if (!response.ok) throw new Error('Não foi possível confirmar a conta Google.');
+      const info = await response.json();
+      this.user = { sub: info.sub, email: info.email, name: info.name || info.email, picture: info.picture || '' };
+      localStorage.setItem(USER_KEY, JSON.stringify(this.user));
+      return this.user;
+    },
+
+    cachedUser() {
+      if (this.user) return this.user;
+      try { this.user = JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
+      catch (_) { this.user = null; }
+      return this.user;
+    },
+
+    signOut() {
+      if (this.token) {
+        try { google.accounts.oauth2.revoke(this.token, () => {}); } catch (_) {}
+      }
+      this.token = '';
+      this.expiresAt = 0;
+      this.user = null;
+      localStorage.removeItem(USER_KEY);
+    }
   };
-  async function accountHash(email){const normalized=String(email||'').trim().toLowerCase();if(!normalized||!globalThis.crypto?.subtle)return '';const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(normalized));return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');}
-  async function assertAuthorizedUser(user){const hash=await accountHash(user?.email);if(!hash||!ALLOWED_ACCOUNT_HASHES.has(hash)){Auth.signOut();throw new Error('Esta conta Google não está autorizada a acessar o Marco Iris Tecnologia.');}await SecureVault.bindOwner(user.sub);await IntegrationVault.bindOwner('borion-ecosystem-integration-v1');return user;}
-  async function authenticateGoogle(interactive=true){await Auth.ensure(interactive);return await assertAuthorizedUser(await Auth.fetchUser());}
-  async function headers(json=false){const token=await Auth.ensure(false);return json?{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}:{Authorization:`Bearer ${token}`};}
-  function safeQuery(v){return String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'");}
-  async function findChildren(parentId,name,mimeType=''){
-    let q=`'${parentId}' in parents and name='${safeQuery(name)}' and trashed=false`;if(mimeType)q+=` and mimeType='${mimeType}'`;
-    const params=new URLSearchParams({q,orderBy:'createdTime asc',pageSize:'100',fields:'files(id,name,mimeType,createdTime,modifiedTime,size,parents,trashed,webViewLink,webContentLink,thumbnailLink)'});
-    const r=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`,{headers:await headers()});
-    if(!r.ok)throw new Error('Falha ao consultar o Google Drive.');const result=await r.json();return Array.isArray(result.files)?result.files:[];
+
+  async function accountHash(email) {
+    const normalized = String(email || '').trim().toLowerCase();
+    if (!normalized || !globalThis.crypto?.subtle) return '';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
   }
-  async function findChild(parentId,name,mimeType=''){
-    const files=await findChildren(parentId,name,mimeType);if(files.length>1)console.warn(`[GOOGLE_DRIVE] Existem ${files.length} itens chamados “${name}”. O mais antigo será reutilizado.`);return files[0]||null;
+
+  async function assertAuthorizedUser(user) {
+    const hash = await accountHash(user?.email);
+    if (!hash || !ALLOWED_ACCOUNT_HASHES.has(hash)) {
+      Auth.signOut();
+      throw new Error('Esta conta Google não está autorizada a acessar o Amanda Estética.');
+    }
+    await SecureVault.bindOwner(user.sub);
+    await IntegrationVault.bindOwner('borion-ecosystem-integration-v1');
+    return user;
   }
-  async function listChildren(parentId,mimeType=''){
-    let q=`'${parentId}' in parents and trashed=false`;if(mimeType)q+=` and mimeType='${mimeType}'`;
-    const params=new URLSearchParams({q,orderBy:'modifiedTime desc',pageSize:'1000',fields:'files(id,name,mimeType,createdTime,modifiedTime,size,parents,trashed)'});
-    const r=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`,{headers:await headers()});
-    if(!r.ok)throw new Error('Falha ao listar os backups no Google Drive.');
-    const result=await r.json();return Array.isArray(result.files)?result.files:[];
+
+  async function authenticateGoogle(interactive = true) {
+    await Auth.ensureToken(interactive);
+    return await assertAuthorizedUser(await Auth.fetchUser());
   }
-  async function createMetadata(meta){const r=await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,createdTime,modifiedTime,size,parents,trashed,webViewLink,webContentLink',{method:'POST',headers:await headers(true),body:JSON.stringify(meta)});if(!r.ok)throw new Error(`Falha ao criar “${meta.name}” no Google Drive.`);return await r.json();}
-  async function createFolder(parentId,name){return await createMetadata({name,mimeType:'application/vnd.google-apps.folder',parents:[parentId]});}
-  async function uploadMediaContent(fileId,blob){const r=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink`,{method:'PATCH',headers:{...(await headers()),'Content-Type':blob.type||'application/octet-stream'},body:blob});if(!r.ok)throw new Error('Falha ao enviar o arquivo para o Google Drive.');return await r.json();}
-  async function updateJson(fileId,obj){const protectedObject=await SecureVault.protect(obj);const result=await uploadMediaContent(fileId,new Blob([JSON.stringify(protectedObject,null,2)],{type:'application/json'}));await SecureVault.confirmSetupPersisted?.(SecureVault.status?.().vaultId||'');return result;}
-  async function readJson(fileId){const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:await headers()});if(!r.ok)throw new Error('Falha ao carregar os dados do Google Drive.');return await SecureVault.open(await r.json(),{prepare:false});}
-  function deviceIsMobile(){return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'')||!!window.matchMedia?.('(pointer: coarse)')?.matches;}
-  function foregroundSavePending(){return saveQueueCompleted<saveQueueRequested||!!saveQueuePromise;}
-  function readBackupEncryptionQueue(folderId){try{const q=JSON.parse(localStorage.getItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX+folderId)||'null');return Array.isArray(q)?q.filter(item=>item?.id&&item?.name):null;}catch(_){return null;}}
-  function writeBackupEncryptionQueue(folderId,queue){localStorage.setItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX+folderId,JSON.stringify(queue));}
-  function schedulePrimaryEncryptionMigration(folderId,file,state,delay=10000){
-    if(!SecureVault.needsMigration()){scheduleBackupEncryptionMigration(folderId);return;}
-    if(primaryEncryptionTimer)clearTimeout(primaryEncryptionTimer);
-    primaryEncryptionTimer=setTimeout(async()=>{
-      primaryEncryptionTimer=null;
-      if(!SecureVault.needsMigration()){scheduleBackupEncryptionMigration(folderId);return;}
-      if(encryptionMigrationInFlight||foregroundSavePending()){schedulePrimaryEncryptionMigration(folderId,file,state,15000);return;}
-      encryptionMigrationInFlight=true;
-      try{
-        const latest=await meta(file.id);
-        if(file.modifiedTime&&latest.modifiedTime&&file.modifiedTime!==latest.modifiedTime)throw new Error('A base foi atualizada durante a espera; a migracao usara a revisao mais nova no proximo ciclo.');
-        const updated=await updateJson(file.id,state),confirmed=await readJson(file.id),check=validateOfficialState(confirmed);
-        if(!check.valid)throw new Error('A conversao criptografada da base principal nao foi confirmada.');
-        SecureVault.markMigrated();
-        Drive.currentFile=updated;
-        scheduleBackupEncryptionMigration(folderId,15000);
-      }catch(error){
-        console.warn('[MarcoDrive] A abertura continuou normalmente; a criptografia sera retomada sem bloquear o aplicativo:',error);
-        schedulePrimaryEncryptionMigration(folderId,file,state,60000);
-      }finally{encryptionMigrationInFlight=false;}
-    },delay);
+
+  async function headers(json = false) {
+    const token = await Auth.ensureToken(false);
+    return json
+      ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      : { Authorization: `Bearer ${token}` };
   }
-  function scheduleBackupEncryptionMigration(folderId,delay=30000){
-    if(localStorage.getItem(ENCRYPTED_BACKUPS_MARKER_PREFIX+folderId)==='1'||deviceIsMobile())return;
-    if(backupEncryptionTimer)clearTimeout(backupEncryptionTimer);
-    backupEncryptionTimer=setTimeout(()=>{backupEncryptionTimer=null;migrateBackupEncryption(folderId).catch(error=>{console.warn('[MarcoDrive] Um backup antigo sera tentado novamente mais tarde:',error);scheduleBackupEncryptionMigration(folderId,120000);});},delay);
+
+  async function findChildren(parentId, name, mimeType = '') {
+    const safe = String(name).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    let q = `'${parentId}' in parents and name='${safe}' and trashed=false`;
+    if (mimeType) q += ` and mimeType='${mimeType}'`;
+    const params = new URLSearchParams({
+      q,
+      orderBy: 'createdTime asc',
+      pageSize: '100',
+      fields: 'files(id,name,createdTime,modifiedTime,mimeType,size,parents,trashed)'
+    });
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: await headers() });
+    if (!response.ok) throw new Error('Falha ao consultar o Google Drive.');
+    const result = await response.json();
+    return Array.isArray(result.files) ? result.files : [];
   }
-  async function migrateBackupEncryption(folderId){
-    if(encryptionMigrationInFlight||foregroundSavePending()){scheduleBackupEncryptionMigration(folderId,30000);return 0;}
-    encryptionMigrationInFlight=true;
-    try{
-      let files=readBackupEncryptionQueue(folderId);
-      if(files===null){files=await listChildren(folderId,'application/json');writeBackupEncryptionQueue(folderId,files.map(file=>({id:file.id,name:file.name})));}
-      const file=files[0];
-      if(!file){localStorage.setItem(ENCRYPTED_BACKUPS_MARKER_PREFIX+folderId,'1');localStorage.removeItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX+folderId);return 0;}
-      let migrated=0;
-      const response=await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,{headers:await headers()});
-      if(!response.ok)throw new Error(`Falha ao verificar a criptografia do backup ${file.name}.`);
-      const raw=await response.json();
-      if(!SecureVault.isEnvelope(raw)&&SecureVault.isSensitive(raw)){await updateJson(file.id,raw);const verify=await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,{headers:await headers()});const confirmed=verify.ok?await verify.json():null;if(!SecureVault.isEnvelope(confirmed))throw new Error(`A criptografia do backup ${file.name} nao foi confirmada.`);migrated=1;}
-      files.shift();writeBackupEncryptionQueue(folderId,files);scheduleBackupEncryptionMigration(folderId,30000);return migrated;
-    }finally{encryptionMigrationInFlight=false;}
+
+  async function findChild(parentId, name, mimeType = '') {
+    const matches = await findChildren(parentId, name, mimeType);
+    if (matches.length > 1) console.warn(`[GOOGLE_DRIVE] Existem ${matches.length} itens chamados “${name}”. O mais antigo será reutilizado.`);
+    return matches[0] || null;
   }
-  async function meta(fileId){const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,createdTime,modifiedTime,size,parents,trashed,webViewLink,webContentLink,thumbnailLink`,{headers:await headers()});if(!r.ok){const e=new Error('Falha ao consultar o arquivo no Google Drive.');e.status=r.status;throw e;}return await r.json();}
-  async function downloadBlob(fileId){const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:await headers()});if(!r.ok)throw new Error('Falha ao baixar o arquivo do Google Drive.');return await r.blob();}
-  async function trash(fileId){const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`,{method:'PATCH',headers:await headers(true),body:JSON.stringify({trashed:true})});if(!r.ok)throw new Error('Falha ao mover o arquivo para a lixeira do Drive.');return true;}
-  function rootKey(sub){return `${ROOT_PREFIX}${sub}`;}function structKey(root){return `${STRUCT_PREFIX}${root}`;}
-  function rootId(){const u=Auth.cached();return u?localStorage.getItem(rootKey(u.sub))||'':'';}
-  function setRoot(id){const u=Auth.cached();if(u)localStorage.setItem(rootKey(u.sub),id);}
-  function clearRoot(){const u=Auth.cached(),root=rootId();if(u)localStorage.removeItem(rootKey(u.sub));if(root)localStorage.removeItem(structKey(root));}
-  function cachedStructure(){const root=rootId();if(!root)return null;try{return JSON.parse(localStorage.getItem(structKey(root))||'null');}catch(_){return null;}}
-  function setStructure(v){if(v?.rootId)localStorage.setItem(structKey(v.rootId),JSON.stringify(v));}
-  function picker(){return new Promise((resolve,reject)=>{const cfg=validateConfig(),view=new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true).setMimeTypes('application/vnd.google-apps.folder');const p=new google.picker.PickerBuilder().setTitle('Escolha a pasta principal da Marco Iris').addView(view).setOAuthToken(Auth.token).setDeveloperKey(cfg.apiKey).setAppId(cfg.projectNumber).setCallback(d=>{if(d.action===google.picker.Action.PICKED)resolve(d.docs[0]);else if(d.action===google.picker.Action.CANCEL)reject(new Error('Nenhuma pasta foi selecionada.'));}).build();p.setVisible(true);});}
-  function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
-  async function withCrossTabLock(name,task){
-    if(navigator?.locks?.request)return await navigator.locks.request(name,task);
-    const key=`marco_iris_v240_mutex_${encodeURIComponent(name)}`,token=`${Date.now()}_${Math.random().toString(36).slice(2)}`,deadline=Date.now()+30000;
-    while(Date.now()<deadline){let current=null;try{current=JSON.parse(localStorage.getItem(key)||'null');}catch(_){}
-      if(!current||Number(current.expiresAt)<Date.now()){localStorage.setItem(key,JSON.stringify({token,expiresAt:Date.now()+30000}));let confirmed=null;try{confirmed=JSON.parse(localStorage.getItem(key)||'null');}catch(_){}
-        if(confirmed?.token===token){try{return await task();}finally{try{const latest=JSON.parse(localStorage.getItem(key)||'null');if(latest?.token===token)localStorage.removeItem(key);}catch(_){localStorage.removeItem(key);}}}}
-      await sleep(120+Math.floor(Math.random()*120));
+
+  function scopedStorageKey(prefix, parentId, name) {
+    return `${prefix}${parentId}_${encodeURIComponent(name)}`;
+  }
+
+  function dataFileStorageKey(rootId) { return `${DATA_FILE_ID_PREFIX}${rootId}`; }
+  function rememberDataFile(rootId, file) {
+    if (!file?.id) return file || null;
+    localStorage.setItem(dataFileStorageKey(rootId), file.id);
+    return file;
+  }
+  function forgetDataFile(rootId) {
+    localStorage.removeItem(dataFileStorageKey(rootId));
+  }
+  function isExpectedDataFile(meta, parentId) {
+    return !!meta && !meta.trashed && meta.name === DATA_FILE &&
+      meta.mimeType === 'application/json' && (meta.parents || []).includes(parentId);
+  }
+
+  function structureStorageKey(rootId) { return `${STRUCTURE_PREFIX}${rootId}`; }
+  function readStoredStructure(rootId) {
+    try { return JSON.parse(localStorage.getItem(structureStorageKey(rootId)) || 'null'); }
+    catch (_) { return null; }
+  }
+  function writeStoredStructure(rootId, structure) {
+    localStorage.setItem(structureStorageKey(rootId), JSON.stringify(structure));
+    resolvedStructures.set(rootId, structure);
+  }
+
+  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  async function getDriveObjectMeta(fileId) {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,parents,trashed,createdTime,modifiedTime`, {
+      headers: await headers()
+    });
+    if (!response.ok) {
+      const error = new Error('Falha ao validar um item do Google Drive.');
+      error.status = response.status;
+      throw error;
+    }
+    return await response.json();
+  }
+
+  async function withCrossTabLock(name, task) {
+    if (navigator?.locks?.request) return await navigator.locks.request(name, task);
+    const key = `amanda_clinica_mutex_${encodeURIComponent(name)}`;
+    const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      let current = null;
+      try { current = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
+      if (!current || Number(current.expiresAt) < Date.now()) {
+        localStorage.setItem(key, JSON.stringify({ token, expiresAt: Date.now() + 30000 }));
+        let confirmed = null;
+        try { confirmed = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
+        if (confirmed?.token === token) {
+          try { return await task(); }
+          finally {
+            try {
+              const latest = JSON.parse(localStorage.getItem(key) || 'null');
+              if (latest?.token === token) localStorage.removeItem(key);
+            } catch (_) { localStorage.removeItem(key); }
+          }
+        }
+      }
+      await sleep(120 + Math.floor(Math.random() * 120));
     }
     throw new Error('Outra aba ainda está preparando as pastas do Google Drive. Feche as abas duplicadas e tente novamente.');
   }
-  function validFolder(info,root,name){return !!info&&!info.trashed&&info.mimeType==='application/vnd.google-apps.folder'&&info.name===name&&(info.parents||[]).includes(root);}
-  async function validateStructure(root,c){
-    if(!c||c.rootId!==root)return null;const normalized={rootId:root};
-    for(const [key,name] of Object.entries(FOLDERS)){const id=c[key];if(!id)return null;try{const info=await meta(id);if(!validFolder(info,root,name))return null;normalized[key]=id;}catch(_){return null;}}
+
+  function isExpectedFolder(meta, parentId, name) {
+    return !!meta && !meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder' &&
+      meta.name === name && (meta.parents || []).includes(parentId);
+  }
+
+  async function ensureFolderUncached(parentId, name) {
+    const cacheKey = scopedStorageKey(SUBFOLDER_PREFIX, parentId, name);
+    const memoryKey = `${parentId}:${name}`;
+    const cachedId = localStorage.getItem(cacheKey);
+    if (cachedId) {
+      try {
+        const meta = await getDriveObjectMeta(cachedId);
+        if (isExpectedFolder(meta, parentId, name)) {
+          const folder = { id: meta.id, name: meta.name, mimeType: meta.mimeType, createdTime: meta.createdTime, modifiedTime: meta.modifiedTime };
+          resolvedFolders.set(memoryKey, folder);
+          return folder;
+        }
+      } catch (error) {
+        if (![403, 404].includes(error.status)) console.warn('[GOOGLE_DRIVE] Pasta em cache inválida:', error);
+      }
+      localStorage.removeItem(cacheKey);
+    }
+
+    let folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
+    if (!folder) {
+      for (const delay of [600, 1400, 2600]) {
+        await sleep(delay);
+        folder = await findChild(parentId, name, 'application/vnd.google-apps.folder');
+        if (folder) break;
+      }
+    }
+    if (!folder) folder = await createFolder(parentId, name);
+    localStorage.setItem(cacheKey, folder.id);
+    resolvedFolders.set(memoryKey, folder);
+    return folder;
+  }
+
+  async function ensureFolder(parentId, name) {
+    const memoryKey = `${parentId}:${name}`;
+    if (resolvedFolders.has(memoryKey)) return resolvedFolders.get(memoryKey);
+    if (folderInflight.has(memoryKey)) return await folderInflight.get(memoryKey);
+    const promise = withCrossTabLock(`amanda-drive-folder:${parentId}:${name}`, () => ensureFolderUncached(parentId, name))
+      .finally(() => folderInflight.delete(memoryKey));
+    folderInflight.set(memoryKey, promise);
+    return await promise;
+  }
+
+  async function validateStoredStructure(rootId, structure) {
+    if (!structure || structure.rootId !== rootId) return null;
+    const normalized = { rootId };
+    for (const [key, name] of Object.entries(APP_FOLDERS)) {
+      const id = structure[key];
+      if (!id) return null;
+      try {
+        const meta = await getDriveObjectMeta(id);
+        if (!isExpectedFolder(meta, rootId, name)) return null;
+        normalized[key] = id;
+        resolvedFolders.set(`${rootId}:${name}`, { id, name, mimeType: meta.mimeType, createdTime: meta.createdTime, modifiedTime: meta.modifiedTime });
+        localStorage.setItem(scopedStorageKey(SUBFOLDER_PREFIX, rootId, name), id);
+      } catch (_) { return null; }
+    }
     return normalized;
   }
-  async function ensureStructure(force=false){
-    const root=rootId();if(!root)throw new Error('Escolha primeiro uma pasta do Google Drive.');
-    if(!force){const c=await validateStructure(root,cachedStructure());if(c)return c;}
-    // V2.4.0 — antes, se a pasta RAIZ em si fosse excluída/movida pra lixeira (ex.:
-    // reset manual pelo site do Drive), a referência nunca era invalidada sozinha:
-    // toda tentativa de publicar falhava em silêncio pra sempre (o erro ficava só
-    // em bridge.lastError, sem aviso claro). Agora confere a raiz primeiro; se ela
-    // não existir mais, limpa a referência local e avisa com instrução clara.
-    try{
-      const rootInfo=await meta(root);
-      if(rootInfo.trashed||rootInfo.mimeType!=='application/vnd.google-apps.folder'){
-        clearRoot();
-        throw new Error('A pasta principal do Google Drive foi excluída ou movida para a lixeira. Vá em Configurações → Backup e Migração, clique em "Desconectar" e depois "Conectar Google" de novo para escolher a pasta atual.');
+
+  async function ensureAppFolders(rootId) {
+    if (resolvedStructures.has(rootId)) return resolvedStructures.get(rootId);
+    if (structureInflight.has(rootId)) return await structureInflight.get(rootId);
+    const promise = withCrossTabLock(`amanda-drive-structure:${rootId}`, async () => {
+      const stored = await validateStoredStructure(rootId, readStoredStructure(rootId));
+      if (stored) {
+        resolvedStructures.set(rootId, stored);
+        return stored;
       }
-    }catch(error){
-      if(error?.status===404){
-        clearRoot();
-        throw new Error('A pasta principal do Google Drive não foi encontrada (pode ter sido excluída). Vá em Configurações → Backup e Migração, clique em "Desconectar" e depois "Conectar Google" de novo para escolher a pasta atual.');
+      const structure = { rootId };
+      for (const [key, name] of Object.entries(APP_FOLDERS)) {
+        structure[key] = (await ensureFolder(rootId, name)).id;
+        writeStoredStructure(rootId, structure);
       }
-      if(!Number.isFinite(error?.status))throw error;
-    }
-    if(structurePromise)return await structurePromise;
-    structurePromise=withCrossTabLock(`marco-drive-structure:${root}`,async()=>{
-      const stored=await validateStructure(root,cachedStructure());if(stored)return stored;
-      const s={rootId:root};
-      for(const [key,name] of Object.entries(FOLDERS)){
-        let f=await findChild(root,name,'application/vnd.google-apps.folder');
-        if(!f){for(const delay of [600,1400,2600]){await sleep(delay);f=await findChild(root,name,'application/vnd.google-apps.folder');if(f)break;}}
-        if(!f)f=await createFolder(root,name);s[key]=f.id;setStructure(s);
-      }
-      setStructure(s);return s;
-    }).finally(()=>{structurePromise=null;});
-    return await structurePromise;
-  }
-  function stamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;}
-  function integrationFileKey(folderId,name){const sub=Auth.cached()?.sub||'unknown';return `marco_iris_v240_gdrive_json_file_${sub}_${folderId}_${encodeURIComponent(name)}`;}
-  async function resolveIntegrationFileUncached(folderId,name,create=false,obj=null){
-    const memoryKey=`${folderId}:${name}`,storageKey=integrationFileKey(folderId,name);
-    const cached=integrationFileIds.get(memoryKey)||localStorage.getItem(storageKey);
-    if(cached){
-      try{const info=await meta(cached);if(info.name===name&&info.mimeType==='application/json'){integrationFileIds.set(memoryKey,cached);return {id:cached,name};}}
-      catch(_){integrationFileIds.delete(memoryKey);localStorage.removeItem(storageKey);}
-    }
-    let f=await findChild(folderId,name,'application/json');
-    if(!f&&create){await sleep(450);f=await findChild(folderId,name,'application/json');if(!f)f=await createMetadata({name,mimeType:'application/json',parents:[folderId]});}
-    if(f){integrationFileIds.set(memoryKey,f.id);localStorage.setItem(storageKey,f.id);}
-    return f||null;
-  }
-  async function resolveIntegrationFile(folderId,name,create=false,obj=null){
-    const memoryKey=`${folderId}:${name}`;if(integrationFilePromises.has(memoryKey))return await integrationFilePromises.get(memoryKey);
-    const task=()=>resolveIntegrationFileUncached(folderId,name,create,obj);
-    const promise=withCrossTabLock(`marco-drive-file:${folderId}:${name}`,task).finally(()=>integrationFilePromises.delete(memoryKey));
-    integrationFilePromises.set(memoryKey,promise);return await promise;
+      writeStoredStructure(rootId, structure);
+      return structure;
+    }).finally(() => structureInflight.delete(rootId));
+    structureInflight.set(rootId, promise);
+    return await promise;
   }
 
-  function backupSlotKey(folderId,kind){return `${BACKUP_SLOT_PREFIX}${kind}_${folderId}`;}
-  function readBackupSlot(folderId,kind,slots){const raw=Number(localStorage.getItem(backupSlotKey(folderId,kind))||0);return Number.isFinite(raw)&&raw>=0?raw%slots:0;}
-  function writeBackupSlot(folderId,kind,slot){localStorage.setItem(backupSlotKey(folderId,kind),String(slot));}
-  async function writeRotatingBackup(folderId,state,{kind='autosave',force=false}={}){
-    if(!folderId||!state)return null;
-    const slots=kind==='forcesave'?FORCESAVE_SLOTS:AUTOSAVE_SLOTS;
-    const lastKey=`${BACKUP_SLOT_PREFIX}${kind}_last_${folderId}`;
-    const lastAt=Number(localStorage.getItem(lastKey)||0);
-    if(!force&&kind==='autosave'&&Date.now()-lastAt<AUTOSAVE_INTERVAL_MS)return null;
-    const slot=readBackupSlot(folderId,kind,slots)+1;
-    const name=`${kind}-${slot}.json`;
-    const file=await resolveIntegrationFile(folderId,name,true,state);
-    await updateJson(file.id,jsonClone(state));
-    const confirmed=await readJson(file.id);
-    const check=validateOfficialState(confirmed);
-    if(!check.valid)throw new Error(`O backup ${name} não pôde ser confirmado no Google Drive.`);
-    writeBackupSlot(folderId,kind,slot%slots);
-    localStorage.setItem(lastKey,String(Date.now()));
-    return {id:file.id,name,slot};
-  }
-  async function writeInstallationManifest(rootIdValue,structure,state,user){
-    if(!rootIdValue||!structure||!state)return null;
-    const manifest={schema:'marco.iris.installation',schemaVersion:1,appId:'marco-iris-tecnologia',appVersion:'2.7.3',createdOrUpdatedAt:new Date().toISOString(),companyInstanceId:companyIdOf(state),googleAccount:String(user?.email||''),rootFolderId:rootIdValue,folders:Object.fromEntries(Object.entries(FOLDERS).map(([key,name])=>[key,{name,id:structure[key]||''}]))};
-    const file=await resolveIntegrationFile(rootIdValue,INSTALLATION_FILE,true,manifest);
-    await updateJson(file.id,manifest);
-    const confirmed=await readJson(file.id);
-    if(confirmed?.companyInstanceId!==manifest.companyInstanceId)throw new Error('O manifesto da instalação não pôde ser confirmado no Google Drive.');
-    return {file,manifest:confirmed};
-  }
-
-  function dataFileKey(folderId){return `${DATA_FILE_ID_PREFIX}${folderId}`;}
-  function rememberDataFile(folderId,file){if(file?.id)localStorage.setItem(dataFileKey(folderId),file.id);return file||null;}
-  function forgetDataFile(folderId){localStorage.removeItem(dataFileKey(folderId));}
-  function validDataFile(info,folderId){return !!info&&!info.trashed&&info.name===DATA_FILE&&info.mimeType==='application/json'&&(info.parents||[]).includes(folderId);}
-  async function resolveDataFileUncached(folderId){
-    const cachedId=localStorage.getItem(dataFileKey(folderId));
-    if(cachedId){
-      try{const info=await meta(cachedId);if(validDataFile(info,folderId))return rememberDataFile(folderId,info);}catch(error){if(![403,404].includes(error?.status))console.warn('[GOOGLE_DRIVE] Arquivo principal em cache inválido:',error);}
+  async function resolveDataFileUncached(folderId) {
+    const cachedId = localStorage.getItem(dataFileStorageKey(folderId));
+    if (cachedId) {
+      try {
+        const meta = await getDriveObjectMeta(cachedId);
+        if (isExpectedDataFile(meta, folderId)) return rememberDataFile(folderId, meta);
+      } catch (error) {
+        if (![403, 404].includes(error.status)) console.warn('[GOOGLE_DRIVE] Arquivo principal em cache inválido:', error);
+      }
       forgetDataFile(folderId);
     }
-    const files=await findChildren(folderId,DATA_FILE,'application/json');
-    if(!files.length)return null;
-    const ordered=[...files].sort((a,b)=>{const modified=new Date(b.modifiedTime||0)-new Date(a.modifiedTime||0);if(modified)return modified;return new Date(a.createdTime||0)-new Date(b.createdTime||0);});
-    if(ordered.length>1)console.warn(`[GOOGLE_DRIVE] Existem ${ordered.length} arquivos principais chamados “${DATA_FILE}”. O mais recentemente modificado será reutilizado.`);
-    return rememberDataFile(folderId,ordered[0]);
+
+    const matches = await findChildren(folderId, DATA_FILE, 'application/json');
+    if (!matches.length) return null;
+    const ordered = [...matches].sort((a, b) => {
+      const modified = new Date(b.modifiedTime || 0) - new Date(a.modifiedTime || 0);
+      if (modified) return modified;
+      return new Date(a.createdTime || 0) - new Date(b.createdTime || 0);
+    });
+    if (ordered.length > 1) {
+      console.warn(`[GOOGLE_DRIVE] Existem ${ordered.length} arquivos principais chamados “${DATA_FILE}”. O mais recentemente modificado será reutilizado.`);
+    }
+    return rememberDataFile(folderId, ordered[0]);
   }
-  async function resolveDataFile(folderId){
-    if(dataFilePromises.has(folderId))return await dataFilePromises.get(folderId);
-    const promise=withCrossTabLock(`marco-drive-main-file-resolve:${folderId}`,()=>resolveDataFileUncached(folderId)).finally(()=>dataFilePromises.delete(folderId));
-    dataFilePromises.set(folderId,promise);return await promise;
+
+  async function resolveDataFile(folderId) {
+    if (dataFileInflight.has(folderId)) return await dataFileInflight.get(folderId);
+    const promise = withCrossTabLock(`amanda-drive-main-file-resolve:${folderId}`, () => resolveDataFileUncached(folderId))
+      .finally(() => dataFileInflight.delete(folderId));
+    dataFileInflight.set(folderId, promise);
+    return await promise;
   }
-  async function saveDataFile(folderId,state,{allowCreate=true,reason='save'}={}){
-    return await withCrossTabLock(`marco-drive-main-file-save:${folderId}`,async()=>{
-      let file=await resolveDataFileUncached(folderId);
-      if(!file){for(const delay of [500,1200,2400]){await sleep(delay);file=await resolveDataFileUncached(folderId);if(file)break;}}
-      let remoteState=null;
-      if(file){
-        remoteState=await readJson(file.id);
-        /* Abrir outro dispositivo não pode fabricar uma revisão nova. Se os dados
-           funcionais são idênticos, adotamos a confirmação oficial existente. */
-        if(await contentChecksum(state)===await contentChecksum(remoteState))return {file:rememberDataFile(folderId,file),state:remoteState,unchanged:true};
-        /* No modo 100% nuvem, uma gravação só é aceita depois que esta aba carregou
-           a base oficial do Drive para a memória. Se essa referência não existe,
-           a nuvem vence automaticamente — jamais tentamos publicar uma base inicial
-           vazia criada pelo navegador. */
-        const sessionBase=await window.MarcoStorage?.loadSyncBase?.();
-        if(!sessionBase){
-          return {file:rememberDataFile(folderId,file),state:remoteState,unchanged:true,recoveredFromUninitializedSession:true};
+
+  async function saveDataFile(folderId, state, appProperties = null) {
+    return await withCrossTabLock(`amanda-drive-main-file-save:${folderId}`, async () => {
+      let file = await resolveDataFileUncached(folderId);
+      if (!file) {
+        for (const delay of [500, 1200, 2400]) {
+          await sleep(delay);
+          file = await resolveDataFileUncached(folderId);
+          if (file) break;
         }
-        const sessionCompany=companyIdOf(sessionBase),remoteCompany=companyIdOf(remoteState);
-        if(sessionCompany&&remoteCompany&&sessionCompany!==remoteCompany){
-          const e=new Error('A pasta selecionada pertence a outra instalação. Nenhum dado foi enviado.');e.code='COMPANY_INSTANCE_CONFLICT';throw e;
-        }
-        const sessionCount=sourceCount(state),remoteCount=sourceCount(remoteState);
-        if(remoteCount>0&&sessionCount===0&&!explicitLocalDeletionCoverage(state,remoteState)){
-          const reasonText=String(reason||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-          const destructive=/exclu|cancel|remov|reset|rollback|restaur|apag/.test(reasonText);
-          if(!destructive){
-            return {file:rememberDataFile(folderId,file),state:remoteState,unchanged:true,recoveredFromEmptySession:true};
-          }
-        }
-        assertSafeReplacement(state,remoteState);
       }
-      else if(!allowCreate)throw new Error('A base oficial não foi localizada no Google Drive.');
-      const prepared=await prepareOfficialState(state,remoteState);
-      if(remoteState){const remoteHash=remoteState?.driveSync?.checksum||await stateChecksum(remoteState);if(remoteHash===prepared.driveSync.checksum)return {file:rememberDataFile(folderId,file),state:remoteState,unchanged:true};
-        /* Histórico curto, limitado e verificável: autosave-1.json ... autosave-20.json. */
-        const structure=cachedStructure();if(structure?.backups)await writeRotatingBackup(structure.backups,remoteState,{kind:'autosave',force:false});
-      }
-      if(!file)file=await createMetadata({name:DATA_FILE,mimeType:'application/json',parents:[folderId]});
-      file=await updateJson(file.id,prepared);const confirmed=await readJson(file.id);const check=validateOfficialState(confirmed);if(!check.valid||confirmed?.driveSync?.checksum!==prepared.driveSync.checksum)throw new Error('A gravação oficial não foi confirmada pelo Google Drive.');
-      return {file:rememberDataFile(folderId,file),state:confirmed,unchanged:false};
+      file = file ? await updateJsonFileWithMeta(file.id, state, appProperties) : await createJsonFile(folderId, DATA_FILE, state, appProperties);
+      return rememberDataFile(folderId, file);
     });
   }
 
-  async function applyConfirmedState(localState,confirmedState,startedSnapshot=null){
-    if(!localState||!confirmedState)return localState;
-    const confirmed=jsonClone(confirmedState),snapshot=startedSnapshot&&typeof startedSnapshot==='object'?jsonClone(startedSnapshot):jsonClone(localState);
-    const confirmedRev=Math.max(0,Number(confirmed?.driveSync?.revision)||0),currentRev=Math.max(0,Number(localState?.driveSync?.revision)||0);
-    if(confirmedRev<currentRev)return localState;
-    const changedWhileSaving=!valueEqual(localState,snapshot);
-    const next=changedWhileSaving?rebaseLocalChanges(snapshot,localState,confirmed):confirmed;
-    Object.keys(localState).forEach(key=>delete localState[key]);
-    Object.assign(localState,next);
-    if(window.MarcoStorage?.save)await window.MarcoStorage.save(localState,{touch:false});
-    /* A base confirmada é o ponto comum usado num conflito posterior. Ela fica
-       separada do estado local, que pode já conter uma edição ainda não enviada. */
-    if(window.MarcoStorage?.saveSyncBase)await window.MarcoStorage.saveSyncBase(confirmed);
-    return localState;
-  }
-
-  // V2.4.0 — decisão pura (sem I/O) de qual base prevalece no login: só adota a
-  // base do Drive quando ela é realmente mais nova (driveSync.revision maior).
-  // Extraída à parte para poder ser testada sem precisar simular toda a API do
-  // Google Drive — mesmo padrão já usado por applyConfirmedState/prepareOfficialState.
-  function decideOfficialSource(localState,remoteState){
-    const localCompany=companyIdOf(localState),remoteCompany=companyIdOf(remoteState);
-    const foreignInstance=!!(localCompany&&remoteCompany&&localCompany!==remoteCompany);
-    const localRev=Math.max(0,Number(localState?.driveSync?.revision)||0),remoteRev=Math.max(0,Number(remoteState?.driveSync?.revision)||0);
-    const localCount=sourceCount(localState),remoteCount=sourceCount(remoteState);
-    const explicitDeletionCoverage=explicitLocalDeletionCoverage(localState,remoteState);
-    /* A base oficial nunca pode ficar inacessível só porque o navegador perdeu o
-       cache local ou ficou com um número de revisão antigo/empatado. A única exceção
-       é uma exclusão local explícita, já registrada por tombstone, cobrindo todos os
-       registros que sumiram. */
-    const localEmptyRemoteHasData=localCount===0&&remoteCount>0&&!explicitDeletionCoverage;
-    const useRemote=foreignInstance||localEmptyRemoteHasData||remoteRev>localRev;
-    return {useRemote,foreignInstance,localEmptyRemoteHasData,explicitDeletionCoverage,localRev,remoteRev,localCount,remoteCount};
-  }
-
-  let saveQueueRequested=0,saveQueueCompleted=0,saveQueueState=null,saveQueueOptions={},saveQueuePromise=null,saveQueueWaiters=[];
-  function mergeSaveOptions(current,next){return {backup:!!(current?.backup||next?.backup),interactive:!!(current?.interactive||next?.interactive),reason:String(next?.reason||current?.reason||'alteracao')};}
-  function settleSaveWaiters(target,error,result){const keep=[];for(const waiter of saveQueueWaiters){if(waiter.seq<=target){error?waiter.reject(error):waiter.resolve(result);}else keep.push(waiter);}saveQueueWaiters=keep;}
-  async function runSaveQueue(){
-    if(saveQueuePromise)return await saveQueuePromise;
-    saveQueuePromise=(async()=>{
-      let lastResult=null;
-      while(saveQueueCompleted<saveQueueRequested){
-        const target=saveQueueRequested,state=saveQueueState,options=saveQueueOptions;
-        saveQueueOptions={};
-        try{lastResult=await Drive.save(state,options);saveQueueCompleted=target;settleSaveWaiters(target,null,lastResult);}
-        catch(error){saveQueueCompleted=target;settleSaveWaiters(target,error,null);throw error;}
+  async function resolveIntegrationFileUncached(folderId, name, createObject = null) {
+    const memoryKey = `${folderId}:${name}`;
+    const cacheKey = scopedStorageKey(INTEGRATION_FILE_PREFIX, folderId, name);
+    const cachedId = resolvedIntegrationFiles.get(memoryKey) || localStorage.getItem(cacheKey);
+    if (cachedId) {
+      try {
+        const meta = await getDriveObjectMeta(cachedId);
+        if (!meta.trashed && meta.name === name && meta.mimeType === 'application/json' && (meta.parents || []).includes(folderId)) {
+          resolvedIntegrationFiles.set(memoryKey, meta.id);
+          localStorage.setItem(cacheKey, meta.id);
+          return { id: meta.id, name: meta.name };
+        }
+      } catch (error) {
+        if (error.status !== 404) console.warn('[GOOGLE_DRIVE] Arquivo de integração em cache inválido:', error);
       }
-      return lastResult;
-    })().finally(()=>{saveQueuePromise=null;if(saveQueueCompleted<saveQueueRequested)runSaveQueue().catch(()=>{});});
-    return await saveQueuePromise;
-  }
-  function enqueueSave(state,options={}){
-    if(!state)return Promise.reject(new Error('Estado indisponível para salvar.'));
-    saveQueueState=state;saveQueueOptions=mergeSaveOptions(saveQueueOptions,options);const seq=++saveQueueRequested;
-    const promise=new Promise((resolve,reject)=>saveQueueWaiters.push({seq,resolve,reject}));
-    runSaveQueue().catch(()=>{});return promise;
-  }
-  function flushSaveQueue(){if(saveQueueCompleted>=saveQueueRequested)return Promise.resolve(null);return new Promise((resolve,reject)=>saveQueueWaiters.push({seq:saveQueueRequested,resolve,reject}));}
+      resolvedIntegrationFiles.delete(memoryKey);
+      localStorage.removeItem(cacheKey);
+    }
 
-  const Drive={currentFile:null,
-    cachedUser:()=>Auth.cached(),rootId,isConfigured:()=>!!(Auth.cached()&&rootId()),hasCredentials:()=>{const c=config();return !!(c.clientId&&c.apiKey&&c.projectNumber);},cachedStructure,
-    async authenticate(interactive=true){return await authenticateGoogle(interactive);},
-    async connect(interactive=true){if(connectionPromise)return await connectionPromise;connectionPromise=(async()=>{const user=await authenticateGoogle(interactive);let root=rootId();if(!root){const chosen=await picker();root=chosen.id;setRoot(root);}const structure=await ensureStructure(false);return {user,rootId:root,structure};})().finally(()=>{connectionPromise=null;});return await connectionPromise;},
-    async ensureConnection(interactive=false){if(!this.isConfigured())return await this.connect(interactive);await Auth.ensure(interactive);const user=await assertAuthorizedUser(await Auth.fetchUser());return {user,rootId:rootId(),structure:await ensureStructure(false)};},
-    async findDataFile(){const {structure}=await this.ensureConnection(false);this.currentFile=await resolveDataFile(structure.data);return this.currentFile;},
-    async save(state,{backup=false,reason='manual',interactive=false}={}){
-      const startedSnapshot=jsonClone(state),{structure,user,rootId:connectedRoot}=await this.ensureConnection(interactive);let result;
-      try{result=await saveDataFile(structure.data,startedSnapshot,{reason});}
-      catch(error){
-        if(error?.code!=='REMOTE_NEWER')throw error;
-        /* Outro dispositivo publicou primeiro. Em vez de travar numa repetição
-           infinita, reaplicamos apenas as mudanças locais sobre a base remota. */
-        const file=this.currentFile||await resolveDataFile(structure.data);if(!file)throw error;
-        const remoteState=await readJson(file.id),baseState=await window.MarcoStorage?.loadSyncBase?.();
-        if(!baseState){const e=new Error('O Google Drive foi alterado em outro dispositivo, mas a referência desta sessão não está disponível. Reabra o aplicativo para carregar novamente a base oficial.');e.code='SYNC_BASE_MISSING';throw e;}
-        const rebased=rebaseLocalChanges(baseState,startedSnapshot,remoteState);
-        result=await saveDataFile(structure.data,rebased,{reason:`reconciliado-${reason}`});
+    let file = await findChild(folderId, name, 'application/json');
+    if (!file && createObject !== null) {
+      await sleep(450);
+      file = await findChild(folderId, name, 'application/json');
+      if (!file) file = await createJsonFile(folderId, name, createObject);
+    }
+    if (file) {
+      resolvedIntegrationFiles.set(memoryKey, file.id);
+      localStorage.setItem(cacheKey, file.id);
+    }
+    return file || null;
+  }
+
+  async function resolveIntegrationFile(folderId, name, createObject = null) {
+    const memoryKey = `${folderId}:${name}`;
+    if (integrationFileInflight.has(memoryKey)) return await integrationFileInflight.get(memoryKey);
+    const promise = withCrossTabLock(`amanda-drive-file:${folderId}:${name}`, () => resolveIntegrationFileUncached(folderId, name, createObject))
+      .finally(() => integrationFileInflight.delete(memoryKey));
+    integrationFileInflight.set(memoryKey, promise);
+    return await promise;
+  }
+
+  async function createFolder(parentId, name) {
+    const response = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,modifiedTime', {
+      method: 'POST',
+      headers: await headers(true),
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
+    });
+    if (!response.ok) throw new Error(`Falha ao criar a pasta “${name}” no Google Drive.`);
+    return await response.json();
+  }
+
+  async function createJsonFile(parentId, name, object, appProperties = null) {
+    const boundary = `amanda_${Date.now()}`;
+    const metadataObj = { name, parents: [parentId], mimeType: 'application/json' };
+    if (appProperties) metadataObj.appProperties = appProperties;
+    const metadata = JSON.stringify(metadataObj);
+    const protectedObject = await SecureVault.protect(object);
+    const content = JSON.stringify(protectedObject, null, 2);
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,size', {
+      method: 'POST',
+      headers: { ...(await headers()), 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!response.ok) throw new Error(`Falha ao criar “${name}” no Google Drive.`);
+    return await response.json();
+  }
+
+  async function updateJsonFile(fileId, object) {
+    const protectedObject = await SecureVault.protect(object);
+    const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,modifiedTime,size`, {
+      method: 'PATCH',
+      headers: await headers(true),
+      body: JSON.stringify(protectedObject, null, 2)
+    });
+    if (!response.ok) throw new Error('Falha ao salvar os dados no Google Drive.');
+    return await response.json();
+  }
+
+  /* V1.20.1 — atualiza conteúdo E appProperties numa ÚNICA requisição
+     (multipart), em vez de precisar de uma chamada extra só para gravar os
+     metadados. Usado no salvamento do arquivo principal, que é o caminho
+     mais frequente e onde uma requisição a mais realmente importa. */
+  async function updateJsonFileWithMeta(fileId, object, appProperties = null) {
+    if (!appProperties) return await updateJsonFile(fileId, object);
+    const boundary = `amanda_${Date.now()}`;
+    const metadata = JSON.stringify({ appProperties });
+    const protectedObject = await SecureVault.protect(object);
+    const content = JSON.stringify(protectedObject, null, 2);
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&fields=id,name,modifiedTime,size`, {
+      method: 'PATCH',
+      headers: { ...(await headers()), 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!response.ok) throw new Error('Falha ao salvar os dados no Google Drive.');
+    return await response.json();
+  }
+
+  async function readJsonFile(fileId) {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: await headers()
+    });
+    if (!response.ok) throw new Error('Falha ao carregar o arquivo do Google Drive.');
+    return await SecureVault.open(await response.json(), { prepare: false });
+  }
+
+  async function getMeta(fileId) {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,modifiedTime,size`, {
+      headers: await headers()
+    });
+    if (!response.ok) throw new Error('Falha ao consultar o arquivo do Google Drive.');
+    return await response.json();
+  }
+
+  /* V1.20.1 — leitura SÓ de metadados (com appProperties), sem baixar o
+     conteúdo. É a base da checagem rápida de revisão/contagem. */
+  async function getFileMetaWithProps(fileId) {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,parents,trashed,createdTime,modifiedTime,size,appProperties`, {
+      headers: await headers()
+    });
+    if (!response.ok) {
+      const error = new Error('Falha ao consultar o arquivo do Google Drive.');
+      error.status = response.status;
+      throw error;
+    }
+    return await response.json();
+  }
+
+  function folderKey(sub) { return `${FOLDER_PREFIX}${sub}`; }
+  function getFolderId() {
+    const user = Auth.cachedUser();
+    return user ? localStorage.getItem(folderKey(user.sub)) : '';
+  }
+  function setFolderId(id) {
+    const user = Auth.cachedUser();
+    if (user) localStorage.setItem(folderKey(user.sub), id);
+  }
+
+  function openFolderPicker() {
+    return new Promise((resolve, reject) => {
+      const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+        .setSelectFolderEnabled(true)
+        .setIncludeFolders(true)
+        .setMimeTypes('application/vnd.google-apps.folder');
+      const picker = new google.picker.PickerBuilder()
+        .setTitle('Escolha a pasta da clínica da Amanda')
+        .addView(view)
+        .setOAuthToken(Auth.token)
+        .setDeveloperKey(API_KEY)
+        .setAppId(PROJECT_NUMBER)
+        .setCallback(data => {
+          if (data.action === google.picker.Action.PICKED) resolve(data.docs[0]);
+          else if (data.action === google.picker.Action.CANCEL) reject(new Error('Nenhuma pasta foi selecionada.'));
+        })
+        .build();
+      picker.setVisible(true);
+    });
+  }
+
+  function stamp() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+  }
+
+  /* ---- V1.16.0 — rodízio de backups (mesma mecânica do Borion Finance) ---- */
+  function rotatingFileKey(folderId, kind, slot) { return `${ROTATING_FILE_ID_PREFIX}${kind}_${folderId}_${slot}`; }
+  function readRotatingFileId(folderId, kind, slot) { return localStorage.getItem(rotatingFileKey(folderId, kind, slot)) || null; }
+  function writeRotatingFileId(folderId, kind, slot, id) { localStorage.setItem(rotatingFileKey(folderId, kind, slot), id); }
+
+  function rotatingIndexKey(folderId, kind) { return `${ROTATING_SLOT_INDEX_PREFIX}${kind}_${folderId}`; }
+  function readRotatingSlotIndex(folderId, kind) {
+    const raw = localStorage.getItem(rotatingIndexKey(folderId, kind));
+    const n = raw != null ? parseInt(raw, 10) : 0;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  function writeRotatingSlotIndex(folderId, kind, index) {
+    try { localStorage.setItem(rotatingIndexKey(folderId, kind), String(index)); } catch (_) {}
+  }
+
+  /* Grava `state` no próximo slot do rodízio `kind` (dentro da pasta Backups),
+     sempre reaproveitando o índice persistido desta pasta — nunca reseta pro
+     slot 1 sozinho por causa de um F5 no meio do caminho. Quando o rodízio dá a
+     volta, o slot mais antigo é sobrescrito (upload substitui o conteúdo do
+     mesmo arquivo, não cria um novo) — é isso que mantém o total sempre no teto
+     (20 para autosave, 40 para forcesave), nunca crescendo além disso. */
+  async function writeRotatingSnapshot(folderId, kind, totalSlots, state) {
+    const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+    const slotIndex = readRotatingSlotIndex(backups.id, kind);
+    const slot = (slotIndex % totalSlots) + 1;
+    const name = `${kind}-${slot}.json`;
+    let fileId = readRotatingFileId(backups.id, kind, slot);
+    if (fileId) {
+      try {
+        const meta = await getDriveObjectMeta(fileId);
+        if (meta.trashed) fileId = null;
+      } catch (error) {
+        if (error.status === 404) fileId = null; else throw error;
       }
-      this.currentFile=result.file;await applyConfirmedState(state,result.state,startedSnapshot);localStorage.setItem(LAST_SAVE,new Date().toISOString());await writeInstallationManifest(connectedRoot,structure,result.state,user);if(backup){await writeRotatingBackup(structure.backups,result.state,{kind:'forcesave',force:true});const name=`Marco_Iris_${String(reason).replace(/[^a-zA-Z0-9_-]/g,'-')}_${stamp()}.json`;const bf=await createMetadata({name,mimeType:'application/json',parents:[structure.backups]});await updateJson(bf.id,result.state);}if(SecureVault.needsMigration()&&!result.unchanged){SecureVault.markMigrated();scheduleBackupEncryptionMigration(structure.backups);}return result.file;
-    },
-    async load({interactive=false,rememberBase=true}={}){
-      const connection=await this.ensureConnection(interactive);
-      const f=this.currentFile||await this.findDataFile();
-      if(!f)throw new Error('Ainda não existe um arquivo de dados nesta pasta.');
-      let [state,info]=await Promise.all([readJson(f.id),meta(f.id)]);
-      let check=validateOfficialState(state);
-      if(!check.valid)throw new Error('A base oficial do Google Drive é inválida: '+check.errors.join(' '));
-      ensureCompanyId(state);
-      if(SecureVault.needsMigration()){
-        // A ativação inicial precisa terminar no arquivo oficial antes de
-        // liberar o sistema. Em segundo plano, uma recarga podia interromper
-        // o processo e fazer o app pedir para criar outra senha mestra.
-        const latest=await meta(f.id);
-        if(info.modifiedTime&&latest.modifiedTime&&info.modifiedTime!==latest.modifiedTime)throw new Error('A base foi atualizada durante a ativação da criptografia. Reabra o aplicativo para carregar a versão mais recente.');
-        const updated=await updateJson(f.id,state);
-        const confirmed=await readJson(f.id);
-        const encryptedCheck=validateOfficialState(confirmed);
-        if(!encryptedCheck.valid)throw new Error('A conversão criptografada da base principal não foi confirmada.');
+    }
+    if (fileId) {
+      await updateJsonFile(fileId, state);
+    } else {
+      const existing = await findChild(backups.id, name, 'application/json');
+      if (existing) { fileId = existing.id; await updateJsonFile(fileId, state); }
+      else { fileId = (await createJsonFile(backups.id, name, state)).id; }
+      writeRotatingFileId(backups.id, kind, slot, fileId);
+    }
+    writeRotatingSlotIndex(backups.id, kind, slotIndex + 1);
+  }
+
+  /* ----------------------------------------------------------------
+     Leitura "oficial" do arquivo principal.
+     V1.20.1 — por padrão, tenta primeiro só os METADADOS (appProperties:
+     revisão, workspace e contagem por coleção). Isso evita baixar o
+     conteúdo inteiro (que inclui todas as fotos em base64, podendo ter
+     vários MB) só para conferir se é seguro gravar. O conteúdo completo
+     só é buscado quando `forceFullContent` é pedido (abrir a base de
+     verdade) ou quando o arquivo é antigo e ainda não tem as propriedades
+     (compatibilidade com bases salvas antes desta otimização).
+     ---------------------------------------------------------------- */
+  async function readRemoteAuthoritative(folderId, options = {}) {
+    const file = await resolveDataFile(folderId);
+    if (!file) return { exists: false, state: null, meta: null, revision: 0, workspaceId: null, counts: null, source: 'none' };
+
+    if (!options.forceFullContent) {
+      try {
+        const meta = await getFileMetaWithProps(file.id);
+        const counts = decodeCountsFromProps(meta.appProperties);
+        const revision = meta.appProperties?.rev !== undefined ? Number(meta.appProperties.rev) : null;
+        const workspaceId = meta.appProperties?.wsid || null;
+        if (counts && revision !== null && workspaceId) {
+          return { exists: true, state: null, meta: file, revision, workspaceId, counts, source: 'metadata' };
+        }
+      } catch (error) {
+        console.warn('[GOOGLE_DRIVE] Checagem rápida por metadados falhou; usando leitura completa como reserva:', error);
+      }
+    }
+
+    // Arquivo ainda sem appProperties (salvo antes desta versão) ou leitura
+    // completa pedida de propósito — busca o conteúdo inteiro mesmo.
+    const state = await readJsonFile(file.id);
+    if (!window.DataGuard?.isValidClinicSchema(state)) {
+      throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'O arquivo principal da clínica no Google Drive não tem o formato esperado. Nada foi alterado.', { file });
+    }
+    return {
+      exists: true,
+      state,
+      meta: file,
+      revision: Number(state.databaseRevision) || 0,
+      workspaceId: state.workspaceId || null,
+      counts: window.DataGuard.collectRecordCounts(state),
+      source: 'content'
+    };
+  }
+
+  /* ----------------------------------------------------------------
+     Carregamento autoritativo usado no boot e no login: sempre busca o
+     CONTEÚDO completo (precisa dele para colocar em STATE) — aqui não tem
+     atalho por metadados, isso só se aplica à checagem antes de gravar.
+     ---------------------------------------------------------------- */
+  async function loadAuthoritative(options = {}) {
+    const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
+    let remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
+
+    // Primeira ativação da criptografia: conclui a gravação do envelope no
+    // arquivo oficial ANTES de liberar o aplicativo. A versão anterior fazia
+    // isso em segundo plano após alguns segundos; uma recarga ou um salvamento
+    // concorrente podia interromper a migração e fazer o app pedir para
+    // "criar" outra senha mestra no próximo acesso.
+    if (remote.exists && SecureVault.needsMigration()) {
+      const migrated = await saveAuthoritative(remote.state, {
+        expectedRevision: remote.revision,
+        skipSuspiciousCheck: true,
+        thorough: false,
+        reason: 'ativacao-inicial-da-criptografia',
+        alsoBackupNewContent: true
+      });
+      remote = {
+        ...remote,
+        state: migrated.payload,
+        revision: migrated.revision,
+        workspaceId: migrated.workspaceId,
+        counts: migrated.counts,
+        source: 'content-encrypted'
+      };
+      scheduleBackupEncryptionMigration(folderId, 15000);
+    } else if (remote.exists) {
+      scheduleBackupEncryptionMigration(folderId);
+    }
+    if (remote.exists) writeStoredWorkspaceId(folderId, remote.workspaceId || readStoredWorkspaceId(folderId));
+    return { ...remote, folderId };
+  }
+
+  /* ----------------------------------------------------------------
+     Gravação autoritativa do arquivo principal. É o ÚNICO caminho que
+     pode escrever em Amanda_Clinica_Dados.json — autosave, salvamento
+     manual e primeira conexão passam todos por aqui. Nunca escreve sem:
+       1) reconferir a revisão remota agora mesmo (evita gravar por cima
+          de uma alteração feita por outra aba/dispositivo);
+       2) checar se a contagem de registros caiu de forma suspeita;
+       3) tirar um snapshot do conteúdo anterior;
+       4) reler o que foi gravado para confirmar revisão e hash.
+     ---------------------------------------------------------------- */
+  async function saveAuthoritative(state, options = {}) {
+    const { allowCreate = false, expectedRevision = null, skipSuspiciousCheck = false, thorough = false, backupSlot = null } = options;
+    const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
+
+    return await withCrossTabLock(`amanda-drive-authoritative-save:${folderId}`, async () => {
+      // V1.20.1 — checagem rápida (só metadados na imensa maioria das vezes,
+      // ver readRemoteAuthoritative). Isso é o que faz o autosave não
+      // precisar mais baixar a base inteira (com todas as fotos) só para
+      // saber se é seguro gravar.
+      const remote = await readRemoteAuthoritative(folderId);
+
+      if (!remote.exists && !allowCreate) {
+        throw new DriveGuardError('MISSING_REMOTE', 'Ainda não existe uma base da clínica nesta pasta do Google Drive. Use a opção de criar uma base nova antes de continuar.', {});
+      }
+
+      if (remote.exists) {
+        if (expectedRevision !== null && expectedRevision !== undefined && remote.revision !== expectedRevision) {
+          throw new DriveGuardError('STALE_REVISION', 'O Google Drive foi atualizado por outro dispositivo ou aba desde que esta sessão carregou os dados. Nada foi substituído — recarregue antes de salvar de novo.', {
+            expectedRevision, remoteRevision: remote.revision, remoteCounts: remote.counts
+          });
+        }
+        if (state.workspaceId && remote.workspaceId && state.workspaceId !== remote.workspaceId) {
+          throw new DriveGuardError('WORKSPACE_MISMATCH', 'Esta pasta do Google Drive pertence a outra base de dados (workspace diferente). Nada foi substituído.', {
+            localWorkspaceId: state.workspaceId, remoteWorkspaceId: remote.workspaceId
+          });
+        }
+        if (!skipSuspiciousCheck) {
+          const nextCounts = window.DataGuard.collectRecordCounts(state);
+          const check = window.DataGuard.detectSuspiciousDrop(nextCounts, remote.counts);
+          const intentionalDeletion = check.suspicious && matchesIntentionalDeletion(remote.counts, nextCounts);
+          if (check.suspicious && !intentionalDeletion) {
+            throw new DriveGuardError('SUSPICIOUS_WRITE', `Salvamento bloqueado por segurança: ${window.DataGuard.describeSuspiciousReasons(check.reasons)}. Os dados desta sessão parecem vazios ou incompletos, enquanto o Google Drive tem uma base maior. Nenhuma informação foi substituída.`, {
+              reasons: check.reasons, nextCounts, remoteCounts: remote.counts
+            });
+          }
+        }
+      }
+
+      // Snapshot do conteúdo anterior — só em gravações "cuidadosas"
+      // (explícitas: salvar agora, conectar, sincronizar, restaurar). No
+      // autosave de rotina isso é pulado de propósito: baixar o conteúdo
+      // inteiro só para copiá-lo de novo, a cada edição, era o principal
+      // motivo de uma foto demorar 1-2 minutos para sincronizar. O rodízio
+      // de 60s (autosave-N.json) continua funcionando por conta própria
+      // como rede de segurança entre uma gravação cuidadosa e outra.
+      if (remote.exists && thorough) {
+        const oldContent = remote.state || await readJsonFile(remote.meta.id);
+        try { await writeRotatingSnapshot(folderId, backupSlot || 'prewrite', PRESAVE_SNAPSHOT_SLOTS, oldContent); }
+        catch (error) { console.warn('[GoogleDriveClinic] Não foi possível criar o snapshot de segurança antes de gravar (a gravação continua):', error); }
+      }
+
+      const workspaceId = state.workspaceId || remote.workspaceId || readStoredWorkspaceId(folderId) || newUuid();
+      const nextRevision = (remote.exists ? remote.revision : 0) + 1;
+      const nextCounts = window.DataGuard.collectRecordCounts(state);
+      const payload = { ...state, workspaceId, databaseRevision: nextRevision, recordCounts: nextCounts };
+      payload.dataHash = await window.DataGuard.stateContentHash(payload);
+      // As mesmas informações também vão como appProperties (metadados),
+      // gravadas na MESMA requisição do conteúdo — é isso que permite a
+      // próxima checagem ser só de metadados também.
+      const appProperties = { rev: String(nextRevision), wsid: workspaceId, ...encodeCountsToProps(nextCounts) };
+
+      const file = await saveDataFile(folderId, payload, appProperties);
+      // O arquivo principal já foi aceito pelo Drive. Só agora entrega a chave
+      // de recuperação da primeira ativação; assim ela não é baixada para um
+      // cofre que ainda não foi persistido.
+      await SecureVault.confirmSetupPersisted?.(SecureVault.status?.().vaultId || '');
+      if (SecureVault.needsMigration()) {
         SecureVault.markMigrated();
-        state=confirmed;
-        info=updated;
-        scheduleBackupEncryptionMigration(connection.structure.backups,15000);
-      }else scheduleBackupEncryptionMigration(connection.structure.backups);
-      this.currentFile=info;
-      if(rememberBase&&window.MarcoStorage?.saveSyncBase)await window.MarcoStorage.saveSyncBase(state);
-      return {state,meta:info};
-    },
-    async initializeOfficialState(initialState,{interactive=true,onProgress=()=>{}}={}){
-      if(!navigator.onLine)throw new Error('Internet obrigatória para abrir o Marco Iris.');
-      onProgress('Conectando ao Google Drive');
-      const conn=await this.ensureConnection(interactive);
-      onProgress('Localizando a base oficial');
-      const file=this.currentFile||await this.findDataFile();
-      if(!file){
-        onProgress('Criando a primeira base oficial');
-        const cleanState=jsonClone(initialState||window.MARCO_INITIAL_DATA);
-        ensureCompanyId(cleanState);
-        const result=await saveDataFile(conn.structure.data,cleanState,{reason:'primeira-base-oficial-cloud-only'});
-        this.currentFile=result.file;
-        if(window.MarcoStorage?.saveSyncBase)await window.MarcoStorage.saveSyncBase(result.state);
-        return {state:result.state,created:true,source:'drive-created',user:conn.user};
+        scheduleBackupEncryptionMigration(folderId);
       }
-      onProgress('Carregando dados oficiais da nuvem');
-      const remote=await this.load({rememberBase:false});
-      ensureCompanyId(remote.state);
-      if(window.MarcoStorage?.saveSyncBase)await window.MarcoStorage.saveSyncBase(remote.state);
-      onProgress('Base oficial confirmada');
-      return {state:remote.state,created:false,source:'drive',user:conn.user,discardedLocalInstance:true};
-    },
-    async sync(state,{interactive=false,backup=false,reason='sincronizacao'}={}){await this.ensureConnection(interactive);const f=this.currentFile||await this.findDataFile();if(!f){await this.save(state,{backup:true,reason:'primeira-sincronizacao'});return {direction:'local',created:true};}const previousSyncBase=await window.MarcoStorage?.loadSyncBase?.(),remote=await this.load({rememberBase:false});const localRev=Math.max(0,Number(state?.driveSync?.revision)||0),remoteRev=Math.max(0,Number(remote.state?.driveSync?.revision)||0);if(remoteRev>localRev){const localChanged=!!previousSyncBase&&await contentChecksum(state)!==await contentChecksum(previousSyncBase);if(localChanged){await this.save(state,{backup,reason:`reconciliado-${reason}`});return {direction:'merged',state,meta:this.currentFile};}if(window.MarcoStorage?.saveSyncBase)await window.MarcoStorage.saveSyncBase(remote.state);return {direction:'remote',state:remote.state,meta:remote.meta};}await this.save(state,{backup,reason});return {direction:'local',meta:this.currentFile};},
-    /* v2.5.0 — consulta passiva entre dispositivos. Lê a base oficial e só a aplica
-       quando a revisão do Drive é maior; não salva, não incrementa revisão e não
-       publica o bridge. Isso impede o computador ocioso de sobrescrever o celular. */
-    async pullIfNewer(state,{interactive=false}={}){
-      if(!state)throw new Error('Sessão atual indisponível para atualização.');
-      await this.ensureConnection(interactive);
-      const file=this.currentFile||await this.findDataFile();
-      if(!file)throw new Error('Ainda não existe um arquivo de dados nesta pasta.');
-      /* Consulta primeiro apenas os metadados. Na maioria das rodadas isso evita
-         baixar o current.json inteiro e deixa o aplicativo leve mesmo aberto o dia todo. */
-      const latestMeta=await meta(file.id),knownModified=String(this.currentFile?.modifiedTime||file.modifiedTime||''),latestModified=String(latestMeta.modifiedTime||'');
-      if(knownModified&&latestModified&&knownModified===latestModified){this.currentFile=latestMeta;return {updated:false,unchanged:true,meta:latestMeta};}
-      const remoteState=await readJson(file.id),check=validateOfficialState(remoteState);
-      if(!check.valid)throw new Error('A base oficial do Google Drive é inválida: '+check.errors.join(' '));
-      ensureCompanyId(remoteState);this.currentFile=latestMeta;
-      const localCompany=companyIdOf(state),remoteCompany=companyIdOf(remoteState);
-      if(localCompany&&remoteCompany&&localCompany!==remoteCompany){const error=new Error('A base remota pertence a outra instalação. A atualização automática foi bloqueada.');error.code='COMPANY_INSTANCE_CONFLICT';throw error;}
-      const localRev=Math.max(0,Number(state?.driveSync?.revision)||0),remoteRev=Math.max(0,Number(remoteState?.driveSync?.revision)||0);
-      if(remoteRev<=localRev)return {updated:false,localRev,remoteRev,meta:latestMeta};
-      const startedSnapshot=jsonClone(state);
-      await applyConfirmedState(state,remoteState,startedSnapshot);
-      return {updated:true,localRev,remoteRev,meta:latestMeta,state};
-    },
-    async uploadBlob(blob,folderKey,fileName,existingId='',expectedSha256=''){
-      const {structure}=await this.ensureConnection(false),parent=structure[folderKey];
-      if(!parent)throw new Error('Pasta de nuvem inválida.');
-      let f=existingId?await meta(existingId).catch(()=>null):await findChild(parent,fileName),created=false;
-      if(f&&!existingId&&expectedSha256){
-        const existingBlob=await downloadBlob(f.id),digest=await crypto.subtle.digest('SHA-256',await existingBlob.arrayBuffer());
-        const existingHash=[...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
-        if(existingHash===expectedSha256)return {...f,created:false,reused:true,sha256:existingHash};
-        const error=new Error(`Já existe no Google Drive um arquivo diferente chamado “${fileName}”. A migração foi bloqueada para não sobrescrevê-lo.`);error.code='MEDIA_NAME_CONFLICT';throw error;
+      writeStoredWorkspaceId(folderId, workspaceId);
+
+      // Reler para confirmar só acontece em gravações "cuidadosas" — no
+      // autosave de rotina, a própria resposta 200 do upload já é a
+      // confirmação de que o Drive aceitou os bytes.
+      if (thorough) {
+        const verify = await readJsonFile(file.id);
+        if (Number(verify.databaseRevision) !== nextRevision) {
+          throw new DriveGuardError('VERIFY_FAILED', 'O Google Drive confirmou a gravação, mas o conteúdo relido não bate com o que foi enviado. Verifique a conexão e tente novamente.', { expected: nextRevision, got: verify.databaseRevision });
+        }
       }
-      if(!f){f=await createMetadata({name:fileName,mimeType:blob.type||'application/octet-stream',parents:[parent]});created=true;}
-      const uploaded=await uploadMediaContent(f.id,blob);return {...uploaded,created,reused:false};
+
+      // Cópia extra opcional no rodízio "forcesave" (mesmo papel de antes:
+      // pontos de restauração pedidos explicitamente pela pessoa — conectar
+      // pela primeira vez, "Salvar agora", sincronizar manualmente).
+      if (options.alsoBackupNewContent) {
+        try { await writeRotatingSnapshot(folderId, 'forcesave', FORCESAVE_SLOTS, payload); }
+        catch (error) { console.warn('[GoogleDriveClinic] Cópia adicional em forcesave falhou (gravação principal já está segura):', error); }
+      }
+
+      writeLastKnownGoodCounts(workspaceId, nextCounts);
+      if (pendingIntentionalDeletion && criticalCountsEqual(pendingIntentionalDeletion.afterCounts, nextCounts)) {
+        pendingIntentionalDeletion = null;
+      }
+      GoogleDriveClinic.currentFile = file;
+      localStorage.setItem('amanda_clinica_last_google_save', new Date().toISOString());
+      return { file, revision: nextRevision, counts: nextCounts, workspaceId, payload };
+    });
+  }
+
+  async function listAllChildren(parentId, mimeType = '') {
+    let q = `'${parentId}' in parents and trashed=false`;
+    if (mimeType) q += ` and mimeType='${mimeType}'`;
+    const params = new URLSearchParams({ q, orderBy: 'modifiedTime desc', pageSize: '200', fields: 'files(id,name,createdTime,modifiedTime,mimeType,size,parents,trashed)' });
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: await headers() });
+    if (!response.ok) throw new Error('Falha ao listar os backups do Google Drive.');
+    const result = await response.json();
+    return Array.isArray(result.files) ? result.files : [];
+  }
+
+  function deviceIsMobile() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')
+      || !!window.matchMedia?.('(pointer: coarse)')?.matches;
+  }
+
+  function hasForegroundSavePending() {
+    return autosaveInFlight
+      || autosaveDirty
+      || (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave());
+  }
+
+  function schedulePrimaryEncryptionMigration(folderId, remote, delay = 12000) {
+    if (!SecureVault.needsMigration()) {
+      scheduleBackupEncryptionMigration(folderId);
+      return;
+    }
+    if (primaryEncryptionTimer) clearTimeout(primaryEncryptionTimer);
+    primaryEncryptionTimer = setTimeout(async () => {
+      primaryEncryptionTimer = null;
+      if (!SecureVault.needsMigration()) {
+        scheduleBackupEncryptionMigration(folderId);
+        return;
+      }
+      if (encryptionMigrationInFlight || hasForegroundSavePending()) {
+        schedulePrimaryEncryptionMigration(folderId, remote, 15000);
+        return;
+      }
+      encryptionMigrationInFlight = true;
+      try {
+        const result = await saveAuthoritative(remote.state, {
+          expectedRevision: remote.revision,
+          skipSuspiciousCheck: true,
+          thorough: false,
+          reason: 'migracao-criptografia-em-segundo-plano'
+        });
+        SecureVault.markMigrated();
+        if (window.AppLifecycle) {
+          window.AppLifecycle.setRevision(result.revision);
+          window.AppLifecycle.setWorkspaceId(result.workspaceId);
+          window.AppLifecycle.setLastKnownGoodCounts(result.counts);
+        }
+        scheduleBackupEncryptionMigration(folderId, 15000);
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] A abertura continuou normalmente; a criptografia da base sera retomada sem bloquear o aplicativo:', error);
+        schedulePrimaryEncryptionMigration(folderId, remote, 60000);
+      } finally {
+        encryptionMigrationInFlight = false;
+      }
+    }, delay);
+  }
+
+  function readBackupEncryptionQueue(folderId) {
+    try {
+      const queue = JSON.parse(localStorage.getItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX + folderId) || 'null');
+      return Array.isArray(queue) ? queue.filter(item => item?.id && item?.name) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeBackupEncryptionQueue(folderId, queue) {
+    localStorage.setItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX + folderId, JSON.stringify(queue));
+  }
+
+  function scheduleBackupEncryptionMigration(folderId, delay = 30000) {
+    const marker = ENCRYPTED_BACKUPS_MARKER_PREFIX + folderId;
+    if (localStorage.getItem(marker) === '1' || deviceIsMobile()) return;
+    if (backupEncryptionTimer) clearTimeout(backupEncryptionTimer);
+    backupEncryptionTimer = setTimeout(() => {
+      backupEncryptionTimer = null;
+      migrateBackupSnapshotsEncryption(folderId).catch(error => {
+        console.warn('[GoogleDriveClinic] Um backup antigo sera tentado novamente mais tarde, sem bloquear o uso:', error);
+        scheduleBackupEncryptionMigration(folderId, 5 * 60 * 1000);
+      });
+    }, delay);
+  }
+
+  async function migrateBackupSnapshotsEncryption(folderId) {
+    if (encryptionMigrationInFlight || hasForegroundSavePending()) {
+      scheduleBackupEncryptionMigration(folderId, 30000);
+      return 0;
+    }
+    encryptionMigrationInFlight = true;
+    try {
+      const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+      let files = readBackupEncryptionQueue(folderId);
+      if (files === null) {
+        files = await listAllChildren(backups.id, 'application/json');
+        writeBackupEncryptionQueue(folderId, files.map(file => ({ id: file.id, name: file.name })));
+      }
+      let migrated = 0;
+      const file = files[0];
+      if (!file) {
+        localStorage.setItem(ENCRYPTED_BACKUPS_MARKER_PREFIX + folderId, '1');
+        localStorage.removeItem(ENCRYPTED_BACKUPS_QUEUE_PREFIX + folderId);
+        return 0;
+      }
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
+      if (!response.ok) throw new Error(`Falha ao verificar a criptografia do backup ${file.name}.`);
+      const raw = await response.json();
+      if (!SecureVault.isEnvelope(raw) && SecureVault.isSensitive(raw)) {
+        await updateJsonFile(file.id, raw);
+        const verifyResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
+        const verified = verifyResponse.ok ? await verifyResponse.json() : null;
+        if (!SecureVault.isEnvelope(verified)) throw new Error(`A criptografia do backup ${file.name} nao foi confirmada.`);
+        migrated = 1;
+      }
+      files.shift();
+      writeBackupEncryptionQueue(folderId, files);
+      scheduleBackupEncryptionMigration(folderId, 2 * 60 * 1000);
+      return migrated;
+    } finally {
+      encryptionMigrationInFlight = false;
+    }
+  }
+
+  /* Seção 12 — recuperação: lista TODOS os arquivos da pasta "Backups" (os
+     três rodízios: autosave, forcesave e prewrite) para a pessoa escolher um
+     ponto de restauração, com data e nome visíveis antes de abrir qualquer
+     um deles. A contagem de registros só é lida quando a pessoa escolhe
+     pré-visualizar um arquivo específico — listar todos de uma vez seria
+     lento e desnecessário (podem existir até ~90 arquivos no rodízio). */
+  async function listBackupSnapshots() {
+    const { folderId } = await GoogleDriveClinic.ensureConnection(false);
+    const backups = await ensureFolder(folderId, APP_FOLDERS.backups);
+    const files = await listAllChildren(backups.id, 'application/json');
+    return files
+      .map(f => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, size: Number(f.size) || 0 }))
+      .sort((a, b) => new Date(b.modifiedTime || 0) - new Date(a.modifiedTime || 0));
+  }
+
+  async function previewSnapshot(fileId) {
+    const state = await readJsonFile(fileId);
+    if (!window.DataGuard?.isValidClinicSchema(state)) {
+      throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'Este arquivo não parece ser um backup válido do Amanda Estética.', {});
+    }
+    return { state, counts: window.DataGuard.collectRecordCounts(state), revision: Number(state.databaseRevision) || 0 };
+  }
+
+  /* Restaurar um snapshot é uma ação EXPLÍCITA da pessoa (ela já viu a
+     contagem de registros antes de confirmar) — por isso pula a checagem de
+     queda suspeita, mas continua tirando um snapshot de segurança do
+     conteúdo atual antes de substituir e continua conferindo a revisão para
+     não perder uma gravação concorrente de outra aba/dispositivo. */
+  async function restoreSnapshot(fileId, options = {}) {
+    const state = await readJsonFile(fileId);
+    if (!window.DataGuard?.isValidClinicSchema(state)) {
+      throw new DriveGuardError('INVALID_REMOTE_SCHEMA', 'Este arquivo não parece ser um backup válido do Amanda Estética.', {});
+    }
+    return await saveAuthoritative(state, {
+      interactive: options.interactive === true,
+      expectedRevision: options.expectedRevision,
+      skipSuspiciousCheck: true,
+      thorough: true,
+      reason: 'restauracao-snapshot-drive',
+      alsoBackupNewContent: true
+    });
+  }
+
+  const GoogleDriveClinic = {
+    currentFile: null,
+    DriveGuardError,
+    loadAuthoritative,
+    saveAuthoritative,
+    readLastKnownGoodCounts,
+    recordKnownGoodCounts: writeLastKnownGoodCounts,
+    authorizeIntentionalDeletion,
+    listBackupSnapshots,
+    previewSnapshot,
+    restoreSnapshot,
+
+    cachedUser() { return Auth.cachedUser(); },
+    folderId() { return getFolderId(); },
+    isConfigured() { return !!(Auth.cachedUser() && getFolderId()); },
+
+    /* V1.16.0 — autosave rotativo (20 slots, 1x por minuto), mesma mecânica do
+       Borion Finance. `stateGetter` é uma função tipo `() => STATE`, passada uma
+       vez ao iniciar o loop (login com Google ou boot já conectado); o tick só
+       grava de fato quando algo mudou desde a última vez (markAutosaveDirty).
+       V1.20.0 — o loop NUNCA roda antes do AppLifecycle liberar a gravação
+       (base do Drive carregada, validada e hidratada). */
+    startAutosaveLoop(stateGetter) {
+      if (typeof stateGetter === 'function') autosaveStateGetter = stateGetter;
+      this.stopAutosaveLoop();
+      if (!this.isConfigured()) return;
+      autosaveTimer = setInterval(() => { this.runAutosaveTick(); }, AUTOSAVE_INTERVAL_MS);
     },
-    async restoreOfficialSnapshot(snapshot,{reason='rollback'}={}){
-      const clean=jsonClone(snapshot||{}),check=validateOfficialState(clean);if(!check.valid)throw new Error('O snapshot de rollback é inválido: '+check.errors.join(' '));
-      const {structure}=await this.ensureConnection(false),file=this.currentFile||await resolveDataFile(structure.data);if(!file)throw new Error('A base oficial não foi localizada para rollback.');
-      const remote=await readJson(file.id),remoteCheck=validateOfficialState(remote);if(!remoteCheck.valid)throw new Error('A base remota atual é inválida: '+remoteCheck.errors.join(' '));
-      const localCompany=companyIdOf(clean),remoteCompany=companyIdOf(remote);if(localCompany&&remoteCompany&&localCompany!==remoteCompany){const error=new Error('O rollback pertence a outra instalação e foi bloqueado.');error.code='COMPANY_INSTANCE_CONFLICT';throw error;}
-      await writeRotatingBackup(structure.backups,remote,{kind:'forcesave',force:true});
-      const backupName=`Marco_Iris_antes_${String(reason||'rollback').replace(/[^a-zA-Z0-9_-]/g,'-')}_${stamp()}.json`,backupFile=await createMetadata({name:backupName,mimeType:'application/json',parents:[structure.backups]});await updateJson(backupFile.id,remote);
-      const prepared=await prepareOfficialState(clean,remote);prepared.driveSync.rollbackReason=String(reason||'rollback');prepared.driveSync.rollbackAt=new Date().toISOString();
-      const updated=await updateJson(file.id,prepared),confirmed=await readJson(file.id),confirmedCheck=validateOfficialState(confirmed);
-      if(!confirmedCheck.valid||confirmed?.driveSync?.checksum!==prepared.driveSync.checksum)throw new Error('O rollback não foi confirmado pelo Google Drive.');
-      this.currentFile=updated;if(window.MarcoStorage?.saveSyncBase)await window.MarcoStorage.saveSyncBase(confirmed);return {file:updated,state:confirmed,backupFile};
+    stopAutosaveLoop() {
+      if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
     },
-    downloadBlob,meta,trash,
-    async folderStatus(){const {structure}=await this.ensureConnection(false);return Object.entries(FOLDERS).map(([key,name])=>({key,name,id:structure[key],url:`https://drive.google.com/drive/folders/${structure[key]}`}));},
+    markAutosaveDirty() { autosaveDirty = true; },
+    async runAutosaveTick() {
+      if (!this.isConfigured() || !autosaveDirty || !autosaveStateGetter) return false;
+      if (window.AppLifecycle && !window.AppLifecycle.canWrite()) return false; // base ainda não validada/hidratada
+      if (autosaveInFlight) return false;
+      autosaveInFlight = true;
+      try {
+        const state = autosaveStateGetter();
+        if (!state) return false;
+        // Mesmo sendo só uma cópia rotativa (não é o arquivo principal), não
+        // deixa uma base suspeita entrar no rodízio de backups — senão os
+        // próprios backups acabam contaminados.
+        const baseline = window.AppLifecycle?.getLastKnownGoodCounts() || readLastKnownGoodCounts(state.workspaceId || window.AppLifecycle?.getWorkspaceId());
+        const nextCounts = window.DataGuard.collectRecordCounts(state);
+        const check = window.DataGuard.detectSuspiciousDrop(nextCounts, baseline);
+        if (check.suspicious) {
+          console.warn('[GoogleDriveClinic] Autosave rotativo pulado por segurança (contagem suspeita):', window.DataGuard.describeSuspiciousReasons(check.reasons));
+          window.onSuspiciousAutosaveBlocked?.(check.reasons);
+          return false;
+        }
+        await writeRotatingSnapshot(getFolderId(), 'autosave', AUTOSAVE_SLOTS, state);
+        autosaveDirty = false;
+        return true;
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] autosave rotativo falhou (tenta de novo no próximo minuto):', error);
+        return false;
+      } finally {
+        autosaveInFlight = false;
+      }
+    },
+    /* V1.21.0 — inicia o "atualização ao vivo". Chamado junto do autosave, ao
+       ficar READY (ver finalizeSessionReady em 10-connection-lifecycle.js). */
+    startLivePollLoop() {
+      this.stopLivePollLoop();
+      if (!this.isConfigured()) return;
+      livePollTimer = setInterval(() => { this.checkForRemoteUpdate(); }, LIVE_POLL_INTERVAL_MS);
+      setTimeout(() => { this.checkForRemoteUpdate(); }, 180);
+    },
+    stopLivePollLoop() {
+      if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+    },
+
+    /* Só confere METADADOS (a mesma checagem barata que já existe para
+       decidir se é seguro gravar — ver readRemoteAuthoritative) — nenhum
+       conteúdo é baixado à toa. Só busca o conteúdo completo quando a
+       revisão realmente mudou. Nunca roda: sem sessão pronta (READY,
+       AppLifecycle.canWrite()); com uma gravação local ainda pendente
+       (window.hasPendingGoogleDriveSave — ver 01-state-utils.js); com a aba
+       em segundo plano; ou em cima de um modal/campo em edição (adia, não
+       descarta — a próxima checagem tenta de novo). */
+    async checkForRemoteUpdate() {
+      const lc = window.AppLifecycle;
+      if (!lc || !lc.canWrite()) return false;
+      if (!this.isConfigured()) return false;
+      if (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave()) return false;
+      if (typeof document !== 'undefined' && document.hidden) return false;
+      if (liveCheckInFlight) return false;
+      liveCheckInFlight = true;
+      try {
+        const { folderId } = await this.ensureConnection(false);
+        const remote = await readRemoteAuthoritative(folderId);
+        if (!remote.exists) return false;
+        const localRevision = lc.getRevision();
+        if (localRevision === null || localRevision === undefined) return false; // esta sessão ainda não carregou nenhuma revisão — não é papel do live-poll decidir isso
+        if (remote.revision === localRevision) return false; // nada novo
+
+        if (!amandaLiveUpdateSafeToApplyNow()) return false; // adia pro próximo tick
+
+        const full = await loadAuthoritative({ interactive: false });
+        if (!full.exists) return false;
+
+        STATE = full.state;
+        if (typeof data === 'function') data();
+        if (typeof runIntegrityAudit === 'function') await runIntegrityAudit({ repair: true, save: false });
+        if (window.ClinicStorage) await window.ClinicStorage.save(STATE);
+        lc.setRevision(full.revision);
+        lc.setWorkspaceId(full.workspaceId);
+        lc.setLastKnownGoodCounts(full.counts);
+        this.recordKnownGoodCounts(full.workspaceId, full.counts);
+
+        if (sessionStorage.getItem('amanda_clinica_unlocked') === '1' && typeof renderView === 'function') {
+          renderView();
+          if (typeof toast === 'function') toast('Atualizado com uma alteração feita em outro dispositivo.');
+        }
+        return true;
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] Checagem de atualização ao vivo falhou (tenta de novo em breve):', error);
+        return false;
+      } finally {
+        liveCheckInFlight = false;
+      }
+    },
+
+    async authenticate(interactive = true) {
+      return await authenticateGoogle(interactive);
+    },
+
+    async connect(interactive = true) {
+      if (connectionInflight) return await connectionInflight;
+      connectionInflight = (async () => {
+        const user = await authenticateGoogle(interactive);
+        let folderId = getFolderId();
+        if (!folderId) {
+          const picked = await openFolderPicker();
+          folderId = picked.id;
+          setFolderId(folderId);
+        }
+        await ensureAppFolders(folderId);
+        return { user, folderId };
+      })().finally(() => { connectionInflight = null; });
+      return await connectionInflight;
+    },
+
+    async ensureConnection(interactive = false) {
+      if (!this.isConfigured()) return await this.connect(interactive);
+      await Auth.ensureToken(interactive);
+      const user = TEST_MODE ? (Auth.user || { sub: 'test-user', email: 'test@example.invalid' }) : await assertAuthorizedUser(await Auth.fetchUser());
+      await SecureVault.bindOwner(user.sub);
+      await IntegrationVault.bindOwner('borion-ecosystem-integration-v1');
+      const folderId = getFolderId();
+      await ensureAppFolders(folderId);
+      return { user, folderId };
+    },
+
+    async findDataFile() {
+      const { folderId } = await this.ensureConnection(false);
+      this.currentFile = await resolveDataFile(folderId);
+      return this.currentFile;
+    },
+
+    /* V1.20.0 — este método público continua existindo para não quebrar quem
+       já chama GoogleDriveClinic.save(...), mas agora delega inteiramente
+       para saveAuthoritative: revisão remota é reconferida na hora, contagem
+       de registros é comparada com a última base confiável e o conteúdo
+       anterior é salvo em snapshot antes de ser substituído. */
+    async save(state, options = {}) {
+      const result = await saveAuthoritative(state, {
+        interactive: options.interactive === true,
+        allowCreate: options.allowCreate === true,
+        expectedRevision: options.expectedRevision !== undefined ? options.expectedRevision : (window.AppLifecycle ? window.AppLifecycle.getRevision() : null),
+        skipSuspiciousCheck: options.skipSuspiciousCheck === true,
+        thorough: options.thorough === true,
+        alsoBackupNewContent: options.backup === true
+      });
+      if (window.AppLifecycle) {
+        window.AppLifecycle.setRevision(result.revision);
+        window.AppLifecycle.setWorkspaceId(result.workspaceId);
+        window.AppLifecycle.setLastKnownGoodCounts(result.counts);
+      }
+      return result.file;
+    },
+
+    /* V1.20.0 — leitura sempre autoritativa (busca o arquivo mais recente do
+       Drive agora, nunca de cache em memória) e com validação de schema. */
+    async load(options = {}) {
+      const remote = await loadAuthoritative(options);
+      if (!remote.exists) throw new Error('Ainda não existe um arquivo da clínica nesta pasta.');
+      return { state: remote.state, meta: remote.meta, revision: remote.revision, counts: remote.counts, workspaceId: remote.workspaceId };
+    },
+
+    /* V1.20.0 — decide com base na REVISÃO que esta sessão efetivamente
+       carregou (AppLifecycle.getRevision()), não mais em comparar relógios
+       (`updatedAt`). Isso fecha a falha em que um estado local recém-criado
+       (com `updatedAt` "agora") parecia mais novo que uma base remota
+       preenchida só porque acabara de ser salvo localmente. Se esta sessão
+       nunca carregou nenhuma revisão confirmada do Drive, o remoto sempre
+       vence — nunca o contrário. */
+    async sync(state, options = {}) {
+      const remote = await loadAuthoritative({ interactive: options.interactive === true });
+      if (!remote.exists) {
+        const result = await saveAuthoritative(state, {
+          interactive: options.interactive === true, allowCreate: true, thorough: true,
+          reason: options.reason || 'primeira-sincronizacao', alsoBackupNewContent: true
+        });
+        if (window.AppLifecycle) { window.AppLifecycle.setRevision(result.revision); window.AppLifecycle.setWorkspaceId(result.workspaceId); window.AppLifecycle.setLastKnownGoodCounts(result.counts); }
+        return { direction: 'local', created: true, revision: result.revision };
+      }
+      const sessionRevision = window.AppLifecycle ? window.AppLifecycle.getRevision() : null;
+      if (sessionRevision === null || sessionRevision === undefined || remote.revision > sessionRevision) {
+        return { direction: 'remote', state: remote.state, meta: remote.meta, revision: remote.revision, counts: remote.counts };
+      }
+      const result = await saveAuthoritative(state, {
+        interactive: options.interactive === true, expectedRevision: remote.revision, thorough: true,
+        reason: options.reason || 'sincronizacao', alsoBackupNewContent: options.backup === true
+      });
+      if (window.AppLifecycle) { window.AppLifecycle.setRevision(result.revision); window.AppLifecycle.setWorkspaceId(result.workspaceId); window.AppLifecycle.setLastKnownGoodCounts(result.counts); }
+      return { direction: 'local', meta: this.currentFile, revision: result.revision };
+    },
+
     /* BORION INTEROP v1.0.0 — protected transport seam. */
-    async integrationFolderId(){const {structure}=await this.ensureConnection(false);return structure.integration;},
-    async writeIntegrationJson(name,obj){const folderId=await this.integrationFolderId();const f=await resolveIntegrationFile(folderId,name,true,obj);const result=await updateJson(f.id,await IntegrationVault.protect(obj));await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId||'');if(IntegrationVault.needsMigration())IntegrationVault.markMigrated();return result;},
-    async readIntegrationJson(name){const folderId=await this.integrationFolderId();const f=await resolveIntegrationFile(folderId,name,false,null);if(!f)return null;const r=await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`,{headers:await headers()});if(!r.ok)throw new Error('Falha ao carregar a integração do Google Drive.');const value=await IntegrationVault.open(await r.json());if(IntegrationVault.needsMigration()){await updateJson(f.id,await IntegrationVault.protect(value));await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId||'');IntegrationVault.markMigrated();}return value;},
-    async writeBackupJson(name,obj){const {structure}=await this.ensureConnection(false);const safeName=String(name||`backup-${stamp()}.json`).replace(/[\\/:*?"<>|]/g,'-');const f=await createMetadata({name:safeName,mimeType:'application/json',parents:[structure.backups]});await updateJson(f.id,obj);const confirmed=await readJson(f.id);return {file:f,state:confirmed};},
-    enqueueSave,flushSaveQueue,
-    async writeAutosave(state,{force=false}={}){const {structure}=await this.ensureConnection(false);return await writeRotatingBackup(structure.backups,state,{kind:'autosave',force});},
-    async writeForceSave(state){const {structure}=await this.ensureConnection(false);return await writeRotatingBackup(structure.backups,state,{kind:'forcesave',force:true});},
-    async diagnose(state){const conn=await this.ensureConnection(false),main=await this.findDataFile(),bridge=await this.readIntegrationJson('marco-iris.bridge.json');return {ok:!!(main&&bridge),user:conn.user,rootId:conn.rootId,folders:await this.folderStatus(),mainFile:main||null,bridgeFile:bridge?{revision:Number(bridge.revision)||0,recordCount:Number(bridge.recordCount)||0,generatedAt:bridge.generatedAt||'',companyInstanceId:bridge.companyInstanceId||bridge.instanceId||''}:null,companyInstanceId:companyIdOf(state),lastSave:localStorage.getItem(LAST_SAVE)||''};},
-    disconnect(){const u=Auth.cached(),root=rootId();if(u)localStorage.removeItem(rootKey(u.sub));if(root)localStorage.removeItem(structKey(root));for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i)||'';if(key.startsWith('marco_iris_v240_'))localStorage.removeItem(key);}window.MarcoStorage?.clearSyncBase?.().catch?.(()=>{});this.currentFile=null;structurePromise=null;connectionPromise=null;integrationFileIds.clear();integrationFilePromises.clear();dataFilePromises.clear();if(primaryEncryptionTimer)clearTimeout(primaryEncryptionTimer);if(backupEncryptionTimer)clearTimeout(backupEncryptionTimer);primaryEncryptionTimer=backupEncryptionTimer=null;encryptionMigrationInFlight=false;saveQueueRequested=saveQueueCompleted=0;saveQueueState=null;saveQueueOptions={};saveQueueWaiters=[];Auth.signOut();},
-    __test:{applyConfirmedState,prepareOfficialState,assertSafeReplacement,validateOfficialState,decideOfficialSource,explicitLocalDeletionCoverage,contentChecksum,rebaseLocalChanges,mergeArrayDelta,writeRotatingBackup,enqueueSave,flushSaveQueue}
+    async integrationFolderId() {
+      const { folderId } = await this.ensureConnection(false);
+      return (await ensureFolder(folderId, APP_FOLDERS.integration)).id;
+    },
+    async writeIntegrationJson(name, object) {
+      const folderId = await this.integrationFolderId();
+      const existing = await resolveIntegrationFile(folderId, name, object);
+      const result = await updateJsonFile(existing.id, await IntegrationVault.protect(object));
+      await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
+      if (IntegrationVault.needsMigration()) IntegrationVault.markMigrated();
+      return result;
+    },
+    async readIntegrationJson(name) {
+      const folderId = await this.integrationFolderId();
+      const existing = await resolveIntegrationFile(folderId, name, null);
+      if (!existing) return null;
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, { headers: await headers() });
+      if (!response.ok) throw new Error('Falha ao carregar a integracao do Google Drive.');
+      const value = await IntegrationVault.open(await response.json());
+      if (IntegrationVault.needsMigration()) {
+        await updateJsonFile(existing.id, await IntegrationVault.protect(value));
+        await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
+        IntegrationVault.markMigrated();
+      }
+      return value;
+    },
+
+    disconnect() {
+      const user = Auth.cachedUser();
+      if (user) localStorage.removeItem(folderKey(user.sub));
+      this.currentFile = null;
+      this.stopAutosaveLoop();
+      this.stopLivePollLoop();
+      if (primaryEncryptionTimer) { clearTimeout(primaryEncryptionTimer); primaryEncryptionTimer = null; }
+      if (backupEncryptionTimer) { clearTimeout(backupEncryptionTimer); backupEncryptionTimer = null; }
+      encryptionMigrationInFlight = false;
+      resolvedFolders.clear();
+      resolvedIntegrationFiles.clear();
+      integrationFileInflight.clear();
+      structureInflight.clear();
+      resolvedStructures.clear();
+      dataFileInflight.clear();
+      connectionInflight = null;
+      window.AppLifecycle?.resetForReconnect();
+      Auth.signOut();
+    },
+
+    // Somente para os testes automatizados em /tests — nunca chamado por
+    // nenhum caminho do próprio aplicativo em produção.
+    __test: {
+      enableTestMode() { TEST_MODE = true; },
+      setToken(token = 'test-token', user = { sub: 'test-user', email: 'test@example.invalid' }) {
+        Auth.token = token;
+        Auth.expiresAt = Date.now() + 3600000;
+        Auth.user = user;
+      },
+      resetCaches() {
+        resolvedFolders.clear();
+        resolvedIntegrationFiles.clear();
+        integrationFileInflight.clear();
+        structureInflight.clear();
+        resolvedStructures.clear();
+        dataFileInflight.clear();
+      },
+      readRemoteAuthoritative,
+      DriveGuardError,
+      authorizeIntentionalDeletion,
+      hasPendingIntentionalDeletion() { return !!pendingIntentionalDeletion; },
+      setFolderIdForTests(id) { setFolderId(id); }
+    }
   };
-  window.GoogleDriveMarco=Drive;
+
+  window.GoogleDriveClinic = GoogleDriveClinic;
+
+  /* V1.21.0 — além do poll de fundo, confere na hora quando a pessoa volta pro
+     app (troca de aba, tira do segundo plano no celular) — não precisa esperar
+     o próximo tick do timer pra já estar em dia. */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && GoogleDriveClinic.isConfigured()) {
+      GoogleDriveClinic.checkForRemoteUpdate();
+    }
+  });
+  window.addEventListener('focus', () => {
+    if (GoogleDriveClinic.isConfigured()) GoogleDriveClinic.checkForRemoteUpdate();
+  });
 })();
