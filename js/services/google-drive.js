@@ -827,9 +827,30 @@
      ---------------------------------------------------------------- */
   async function loadAuthoritative(options = {}) {
     const { folderId } = await GoogleDriveClinic.ensureConnection(options.interactive === true);
-    const remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
+    let remote = await readRemoteAuthoritative(folderId, { forceFullContent: true });
+
+    // Primeira ativação da criptografia: conclui a gravação do envelope no
+    // arquivo oficial ANTES de liberar o aplicativo. A versão anterior fazia
+    // isso em segundo plano após alguns segundos; uma recarga ou um salvamento
+    // concorrente podia interromper a migração e fazer o app pedir para
+    // "criar" outra senha mestra no próximo acesso.
     if (remote.exists && SecureVault.needsMigration()) {
-      schedulePrimaryEncryptionMigration(folderId, remote);
+      const migrated = await saveAuthoritative(remote.state, {
+        expectedRevision: remote.revision,
+        skipSuspiciousCheck: true,
+        thorough: false,
+        reason: 'ativacao-inicial-da-criptografia',
+        alsoBackupNewContent: true
+      });
+      remote = {
+        ...remote,
+        state: migrated.payload,
+        revision: migrated.revision,
+        workspaceId: migrated.workspaceId,
+        counts: migrated.counts,
+        source: 'content-encrypted'
+      };
+      scheduleBackupEncryptionMigration(folderId, 15000);
     } else if (remote.exists) {
       scheduleBackupEncryptionMigration(folderId);
     }
@@ -909,6 +930,10 @@
       const appProperties = { rev: String(nextRevision), wsid: workspaceId, ...encodeCountsToProps(nextCounts) };
 
       const file = await saveDataFile(folderId, payload, appProperties);
+      // O arquivo principal já foi aceito pelo Drive. Só agora entrega a chave
+      // de recuperação da primeira ativação; assim ela não é baixada para um
+      // cofre que ainda não foi persistido.
+      await SecureVault.confirmSetupPersisted?.(SecureVault.status?.().vaultId || '');
       if (SecureVault.needsMigration()) {
         SecureVault.markMigrated();
         scheduleBackupEncryptionMigration(folderId);
@@ -1341,6 +1366,7 @@
       const folderId = await this.integrationFolderId();
       const existing = await resolveIntegrationFile(folderId, name, object);
       const result = await updateJsonFile(existing.id, await IntegrationVault.protect(object));
+      await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
       if (IntegrationVault.needsMigration()) IntegrationVault.markMigrated();
       return result;
     },
@@ -1353,6 +1379,7 @@
       const value = await IntegrationVault.open(await response.json());
       if (IntegrationVault.needsMigration()) {
         await updateJsonFile(existing.id, await IntegrationVault.protect(value));
+        await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
         IntegrationVault.markMigrated();
       }
       return value;

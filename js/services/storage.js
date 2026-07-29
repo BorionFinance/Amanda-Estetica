@@ -104,6 +104,7 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    await Vault.confirmSetupPersisted?.(Vault.status?.().vaultId || '');
   }
 
   async function readUploadedJson(file) {
