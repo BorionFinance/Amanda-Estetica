@@ -318,7 +318,7 @@
   }
 
   async function findChildren(parentId, name, mimeType = '') {
-    const safe = String(name).replace(/'/g, "\\'");
+    const safe = String(name).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     let q = `'${parentId}' in parents and name='${safe}' and trashed=false`;
     if (mimeType) q += ` and mimeType='${mimeType}'`;
     const params = new URLSearchParams({
