@@ -805,10 +805,8 @@
         createdAt: new Date().toISOString()
       };
       const envelope = await updateEnvelope(value);
-      // A chave de recuperação só é entregue depois que o chamador confirma
-      // que o primeiro envelope foi realmente persistido. Isso evita gerar
-      // uma nova chave a cada recarga quando o upload inicial falha ou ainda
-      // não terminou.
+      // Entrega a chave de recuperação somente depois que o primeiro
+      // envelope tiver sido realmente persistido pelo aplicativo.
       pendingRecovery = { vaultId, recoveryCode };
       if (
         !readBiometricRecord(appId, vaultId)
@@ -832,8 +830,6 @@
       const expected = String(expectedVaultId || '').trim();
       if (expected && pending.vaultId !== expected) return false;
       if (!template || template.vaultId !== pending.vaultId) return false;
-      // Limpa antes de abrir a confirmação para impedir downloads duplicados
-      // caso dois salvamentos terminem praticamente ao mesmo tempo.
       pendingRecovery = null;
       await downloadRecovery(appName, appId, pending.recoveryCode, dialogTheme);
       return true;

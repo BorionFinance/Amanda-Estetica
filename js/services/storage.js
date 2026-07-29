@@ -2,138 +2,123 @@
   'use strict';
 
   /*
-   * Amanda Estetica Cloud-Only Storage
-   * ----------------------------------
-   * Dados clinicos, financeiros, fotos e perfis existem apenas em memoria
-   * durante a sessao e no Google Drive criptografado. O navegador conserva
-   * somente identificadores tecnicos de autenticacao e da pasta escolhida.
+   * Marco Iris Cloud-Only Storage (v2.6.6)
+   * ---------------------------------------
+   * Nenhum dado de negócio é persistido no navegador. Clientes, OSVs,
+   * lançamentos, exclusões, rascunhos e mídias existem apenas em memória até
+   * serem confirmados no Google Drive. localStorage continua reservado apenas
+   * para credenciais técnicas do Google e IDs da pasta escolhida.
    */
-  const DATA_FILE = 'Amanda_Clinica_Dados.json';
-  const LEGACY_DB = 'amanda_clinica_db_v1';
-  const LEGACY_DATA_KEYS = new Set([
-    'amanda_clinica_snapshot_v1',
-    'amanda_clinica_last_folder_save'
-  ]);
-  const Vault = window.SecureJsonVault.forApp({
-    appId: 'amanda-clinica',
-    appName: 'Amanda Estetica',
-    dialogTheme: 'amanda',
-    isSensitive: value => !!(value && typeof value === 'object' && value.appId === 'amanda-clinica' && value.dataByProfile)
+  const DATA_FILE='Marco_Iris_Dados.json';
+  const Vault=window.SecureJsonVault.forApp({
+    appId:'marco-iris-tecnologia',
+    appName:'Marco Iris Tecnologia',
+    dialogTheme:'marco',
+    isSensitive:value=>!!(value&&typeof value==='object'&&value.appId==='marco-iris-tecnologia'&&value.dataByProfile)
   });
+  const LEGACY_DATABASES=[
+    'marco_iris_tecnologia_db_v240_clean',
+    'marco_iris_tecnologia_db',
+    'marco_iris_tecnologia'
+  ];
+  let syncBaseMemory=null;
+  const mediaMemory=new Map();
+  const draftMemory=new Map();
 
-  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+  const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
 
-  async function deleteLegacyDatabase() {
-    if (!globalThis.indexedDB) return false;
-    return await new Promise(resolve => {
-      const request = indexedDB.deleteDatabase(LEGACY_DB);
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => resolve(false);
-      request.onblocked = () => resolve(false);
+  async function load(){
+    return clone(window.MARCO_INITIAL_DATA);
+  }
+
+  async function save(state,{touch=true}={}){
+    if(touch&&state)state.updatedAt=new Date().toISOString();
+    return state;
+  }
+
+  async function loadSyncBase(){return syncBaseMemory?clone(syncBaseMemory):null;}
+  async function saveSyncBase(state){syncBaseMemory=state?clone(state):null;return state;}
+  async function clearSyncBase(){syncBaseMemory=null;return true;}
+
+  async function createBackup(state,reason='manual'){
+    if(!navigator.onLine)throw new Error('Internet obrigatória para criar backup no Google Drive.');
+    if(!window.GoogleDriveMarco?.isConfigured?.())throw new Error('Conecte o Google Drive antes de criar backup.');
+    await window.GoogleDriveMarco.writeForceSave(state);
+    return {id:`drive_${Date.now()}`,createdAt:new Date().toISOString(),reason,cloud:true};
+  }
+  async function listBackups(){return [];}
+  async function restoreBackup(){return null;}
+
+  async function putMedia(blob,meta={}){
+    if(!(blob instanceof Blob))throw new Error('O arquivo selecionado não pôde ser processado.');
+    if(blob.size<=0)throw new Error(`O arquivo ${meta.name||'selecionado'} está vazio ou não pôde ser lido.`);
+    if(!navigator.onLine)throw new Error('Internet obrigatória para adicionar arquivos.');
+    const id=meta.id||`memory_media_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const record={id,blob,name:meta.name||'arquivo',type:meta.type||blob.type||'application/octet-stream',size:blob.size,createdAt:meta.createdAt||new Date().toISOString()};
+    mediaMemory.set(id,record);
+    return record;
+  }
+  async function getMedia(id){return id?mediaMemory.get(id)||null:null;}
+  async function deleteMedia(id){if(id)mediaMemory.delete(id);}
+
+  async function saveDraft(key,draft){
+    if(!key)throw new Error('Chave de rascunho inválida.');
+    const record={...clone(draft||{}),key,updatedAt:draft?.updatedAt||new Date().toISOString()};
+    draftMemory.set(key,record);
+    return clone(record);
+  }
+  async function getDraft(key){const record=key?draftMemory.get(key):null;return record?clone(record):null;}
+  async function deleteDraft(key){if(key)draftMemory.delete(key);}
+  async function listDrafts(){return [...draftMemory.values()].map(clone).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));}
+  async function putDraftMedia(blob,meta={}){return await putMedia(blob,{...meta,id:meta.id||`memory_draft_media_${Date.now()}_${Math.random().toString(36).slice(2,8)}`});}
+  async function deleteDraftMedia(id){return await deleteMedia(id);}
+
+  async function connectFolder(){throw new Error('O modo nuvem obrigatória não usa pasta local.');}
+  async function getFolderHandle(){return null;}
+  async function forgetFolder(){return true;}
+  async function ensurePermission(){return false;}
+  async function saveToFolder(){throw new Error('O modo nuvem obrigatória não salva dados em pasta local.');}
+  async function readFromFolder(){throw new Error('O modo nuvem obrigatória carrega dados somente do Google Drive.');}
+
+  function stamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;}
+  async function downloadJson(state,filename=`Marco_Iris_Backup_${stamp()}.json`){const protectedState=await Vault.protect(state);downloadBlob(new Blob([JSON.stringify(protectedState,null,2)],{type:'application/json'}),filename);await Vault.confirmSetupPersisted?.(Vault.status?.().vaultId||'');}
+  function downloadBlob(blob,filename){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+  async function readUploadedJson(file){const obj=await Vault.open(JSON.parse(await file.text()));if(obj?.appId!=='marco-iris-tecnologia'||!obj.dataByProfile)throw new Error('Arquivo incompatível com o sistema Marco Iris.');return obj;}
+
+  async function deleteLegacyDatabase(name){
+    if(!globalThis.indexedDB)return false;
+    return await new Promise(resolve=>{
+      const request=indexedDB.deleteDatabase(name);
+      request.onsuccess=()=>resolve(true);
+      request.onerror=()=>resolve(false);
+      request.onblocked=()=>resolve(false);
     });
   }
 
-  async function purgeLegacyData() {
-    await deleteLegacyDatabase();
-    for (const key of LEGACY_DATA_KEYS) localStorage.removeItem(key);
-    return true;
-  }
-
-  async function load() {
-    await purgeLegacyData();
-    return clone(window.AMANDA_INITIAL_DATA);
-  }
-
-  async function save(state, { touch = true } = {}) {
-    if (touch && state) state.updatedAt = new Date().toISOString();
-    return state;
-  }
-
-  async function createLocalBackup(state, reason = 'manual') {
-    if (!navigator.onLine) throw new Error('Internet obrigatoria para criar backup no Google Drive.');
-    if (!window.GoogleDriveClinic?.isConfigured?.()) throw new Error('Conecte o Google Drive antes de criar backup.');
-    await window.GoogleDriveClinic.save(state, { backup: true, reason, thorough: true });
-    return { id: `drive_${Date.now()}`, createdAt: new Date().toISOString(), reason, cloud: true };
-  }
-
-  async function listLocalBackups() {
-    return [];
-  }
-
-  async function restoreLocalBackup() {
-    return null;
-  }
-
-  async function connectFolder() {
-    throw new Error('O Amanda Estetica usa somente o Google Drive criptografado.');
-  }
-
-  async function getFolderHandle() {
-    return null;
-  }
-
-  async function forgetFolderHandle() {
-    return true;
-  }
-
-  async function ensurePermission() {
-    return false;
-  }
-
-  async function saveToFolder() {
-    throw new Error('O modo cloud-only nao grava a base em pastas locais.');
-  }
-
-  async function readFromFolder() {
-    throw new Error('O modo cloud-only carrega a base somente do Google Drive.');
-  }
-
-  function stamp(date = new Date()) {
-    const part = number => String(number).padStart(2, '0');
-    return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}_${part(date.getHours())}-${part(date.getMinutes())}-${part(date.getSeconds())}`;
-  }
-
-  async function downloadJson(state, filename = `Amanda_Clinica_Backup_CRIPTOGRAFADO_${stamp()}.json`) {
-    const protectedState = await Vault.protect(state);
-    const blob = new Blob([JSON.stringify(protectedState, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    await Vault.confirmSetupPersisted?.(Vault.status?.().vaultId || '');
-  }
-
-  async function readUploadedJson(file) {
-    if (!file) throw new Error('Selecione um arquivo JSON.');
-    const state = await Vault.open(JSON.parse(await file.text()));
-    if (!state || state.appId !== 'amanda-clinica' || !state.dataByProfile) {
-      throw new Error('Este arquivo nao e um backup valido do Amanda Estetica.');
+  async function purgeLegacyData(){
+    mediaMemory.clear();draftMemory.clear();syncBaseMemory=null;
+    await Promise.all(LEGACY_DATABASES.map(deleteLegacyDatabase));
+    for(let i=localStorage.length-1;i>=0;i--){
+      const key=localStorage.key(i)||'';
+      /* Preserve somente autenticação, configuração e IDs técnicos do Drive. */
+      if((key.startsWith('marco_iris_')||key.startsWith('marco-iris-'))&&!key.startsWith('marco_iris_v240_gdrive_')&&!key.startsWith('marco_iris_device_id_'))localStorage.removeItem(key);
     }
-    return state;
+    for(let i=sessionStorage.length-1;i>=0;i--){
+      const key=sessionStorage.key(i)||'';
+      if(key.startsWith('marco_iris_')||key.startsWith('marco-iris-'))sessionStorage.removeItem(key);
+    }
+    return true;
   }
 
-  window.ClinicStorage = {
-    load,
-    save,
-    connectFolder,
-    getFolderHandle,
-    forgetFolderHandle,
-    ensurePermission,
-    saveToFolder,
-    readFromFolder,
-    createLocalBackup,
-    listLocalBackups,
-    restoreLocalBackup,
-    downloadJson,
-    readUploadedJson,
-    purgeLegacyData,
-    wipeAll: purgeLegacyData,
-    DATA_FILE,
-    DB_NAME: 'cloud-only-no-indexeddb',
-    cloudOnly: true
+  async function wipeAll(){return await purgeLegacyData();}
+
+  window.MarcoStorage={
+    load,save,loadSyncBase,saveSyncBase,clearSyncBase,
+    createBackup,listBackups,restoreBackup,
+    putMedia,getMedia,deleteMedia,
+    saveDraft,getDraft,deleteDraft,listDrafts,putDraftMedia,deleteDraftMedia,
+    connectFolder,getFolderHandle,forgetFolder,ensurePermission,saveToFolder,readFromFolder,
+    downloadJson,downloadBlob,readUploadedJson,wipeAll,purgeLegacyData,
+    DATA_FILE,DB_NAME:'cloud-only-no-indexeddb',cloudOnly:true
   };
 })();

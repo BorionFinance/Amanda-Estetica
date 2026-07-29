@@ -1,10 +1,10 @@
 (function(){
   'use strict';
-  const APP = "amanda";
+  const APP = "marco";
   const HUB_URL = "https://borionfinance.github.io/Borion-Hub/";
-  const LOGIN_SELECTOR = ".login-shell";
-  const SETTINGS_SELECTOR = ".nav-item[data-nav=\"settings\"]";
-  const MENU_CLASS = "nav-item";
+  const LOGIN_SELECTOR = ".login-screen";
+  const SETTINGS_SELECTOR = ".nav-btn[data-view=\"settings\"]";
+  const MENU_CLASS = "nav-btn";
   const HOUSE = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M3.5 10.8 12 3.9l8.5 6.9\"/><path d=\"M5.8 9.5v10.1h12.4V9.5\"/><path d=\"M9.6 19.6v-5.9h4.8v5.9\"/></svg>";
 
   document.documentElement.dataset.borionApp = APP;
@@ -47,7 +47,7 @@
     requestAnimationFrame(()=>{queued=false;inject();});
   };
   const root=document.getElementById('root');
-  if(root)new MutationObserver(schedule).observe(root,{childList:true,subtree:false});
+  if(root)new MutationObserver(schedule).observe(root,{childList:true,subtree:true});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});
   else schedule();
 })();
