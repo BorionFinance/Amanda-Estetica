@@ -1364,8 +1364,38 @@
     },
     async writeIntegrationJson(name, object) {
       const folderId = await this.integrationFolderId();
-      const existing = await resolveIntegrationFile(folderId, name, object);
-      const result = await updateJsonFile(existing.id, await IntegrationVault.protect(object));
+      let existing = await resolveIntegrationFile(folderId, name, null);
+
+      /* V1.22.4 — CORREÇÃO DO POPUP REPETIDO DE “CRIAR SENHA MESTRA”.
+         O publicador da integração roda poucos segundos depois de cada login.
+         Antes, ele tentava PROTEGER o novo snapshot antes de abrir o envelope
+         já salvo no Drive. Como a chave da integração existe apenas na memória
+         durante a sessão, o cofre concluía incorretamente que era uma primeira
+         configuração e abria novamente o fluxo de criação da senha mestra.
+
+         Agora, na primeira escrita da sessão, um arquivo já existente é aberto
+         primeiro. Isso restaura/desbloqueia o cofre persistido e só então gera
+         a próxima revisão. Se ainda não houver arquivo, o primeiro conteúdo já
+         é criado cifrado — nunca existe uma cópia intermediária em texto puro. */
+      if (existing && !IntegrationVault.status?.().unlocked) {
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, { headers: await headers() });
+        if (!response.ok) throw new Error('Falha ao preparar a integracao segura do Google Drive.');
+        await IntegrationVault.open(await response.json(), { prepare: false });
+      }
+
+      const protectedObject = await IntegrationVault.protect(object);
+
+      if (!existing) {
+        // `protectedObject` já é um envelope cifrado. Passá-lo como objeto de
+        // criação evita a antiga janela em que o arquivo nascia em texto puro
+        // e só era criptografado numa segunda requisição.
+        existing = await resolveIntegrationFile(folderId, name, protectedObject);
+      }
+
+      // Atualiza também quando outra aba/dispositivo criou o arquivo durante
+      // esta inicialização, garantindo que o conteúdo final seja o envelope
+      // protegido desta sessão.
+      const result = await updateJsonFile(existing.id, protectedObject);
       await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
       if (IntegrationVault.needsMigration()) IntegrationVault.markMigrated();
       return result;
