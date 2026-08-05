@@ -144,9 +144,22 @@
      REVISÃO (metadados, ver readRemoteAuthoritative) do arquivo principal.
      Se mudou, é porque outro dispositivo salvou — busca o conteúdo completo
      e atualiza a tela sozinho, sem precisar sair do app e entrar de novo. */
-  const LIVE_POLL_INTERVAL_MS = 1200;
+  /* V1.23.0 — ritmo adaptativo (mesma mecânica do Borion Finance).
+     O intervalo fixo de 1,2 s batia no Drive o tempo todo, inclusive com o
+     app parado aberto no celular: gastava bateria, cota da API e deixava a
+     rede ocupada bem na hora em que uma gravação precisava sair. Agora o
+     ritmo acompanha o uso — rápido logo depois de mexer em alguma coisa,
+     mais calmo quando está só aberto, quase parado quando ninguém toca. */
+  const LIVE_POLL_ACTIVE_MS = 1200;
+  const LIVE_POLL_NORMAL_MS = 3500;
+  const LIVE_POLL_IDLE_MS = 12000;
+  const LIVE_ACTIVE_WINDOW_MS = 20000;
+  const LIVE_IDLE_AFTER_MS = 2 * 60 * 1000;
   let livePollTimer = null;
   let liveCheckInFlight = false;
+  let liveActiveUntil = 0;
+  let lastUserActivityAt = Date.now();
+  let livePollBound = false;
 
   /* V1.21.2 — exclusões confirmadas pelo usuário não podem ser confundidas com
      uma base vazia/corrompida. A autorização abaixo é curta, fica só em memória
@@ -360,6 +373,107 @@
     if (matches.length > 1) console.warn(`[GOOGLE_DRIVE] Existem ${matches.length} itens chamados “${name}”. O mais antigo será reutilizado.`);
     return matches[0] || null;
   }
+
+
+  /* =========================================================================
+     V1.23.0 — Chave de conta: "somente login com Google"
+     -------------------------------------------------------------------------
+     O pedido foi tirar a senha mestra, que ficava sendo cobrada toda vez que
+     o app abria (e duas vezes, porque existem DOIS cofres: o da clínica e o
+     da integração com o Borion — cada um pedia a sua).
+
+     Como funciona agora: o segredo de cada cofre fica num arquivo próprio
+     dentro da mesma pasta do app no Google Drive. Depois do login Google o
+     app lê esse arquivo e destranca a base sozinho.
+
+     O QUE ISSO SIGNIFICA NA PRÁTICA (decisão consciente, não descuido):
+     a criptografia do arquivo continua igual — AES-GCM, verificação de
+     integridade, vínculo de dono e chave de recuperação — mas a chave passa
+     a morar ao lado dos dados. Ou seja, o cadeado real vira o acesso à conta
+     Google e à pasta. Quem consegue abrir a pasta consegue abrir os dados.
+     A senha mestra deixou de ser uma barreira extra.
+     ========================================================================= */
+  const ACCOUNT_KEY_FILE = 'Amanda_Clinica_Chave_De_Conta.json';
+  let accountKeyCache = null;
+  let accountKeyInflight = null;
+
+  async function loadAccountKeyPayload(folderId) {
+    if (accountKeyCache) return accountKeyCache;
+    if (accountKeyInflight) return await accountKeyInflight;
+    accountKeyInflight = (async () => {
+      let payload = null;
+      try {
+        const file = await findChild(folderId, ACCOUNT_KEY_FILE, 'application/json');
+        if (file) {
+          const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: await headers() });
+          if (response.ok) payload = await response.json();
+        }
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] Nao foi possivel ler a chave de conta:', error);
+      }
+      accountKeyCache = (payload && typeof payload === 'object' && !Array.isArray(payload))
+        ? payload
+        : { schema: 'amanda.account-key.v1', vaults: {} };
+      if (!accountKeyCache.vaults || typeof accountKeyCache.vaults !== 'object') accountKeyCache.vaults = {};
+      return accountKeyCache;
+    })().finally(() => { accountKeyInflight = null; });
+    return await accountKeyInflight;
+  }
+
+  async function writeAccountKeyPayload(folderId, payload) {
+    const content = JSON.stringify(payload, null, 2);
+    const existing = await findChild(folderId, ACCOUNT_KEY_FILE, 'application/json');
+    if (existing) {
+      const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media&fields=id`, {
+        method: 'PATCH',
+        headers: await headers(true),
+        body: content
+      });
+      if (!response.ok) throw new Error('Falha ao atualizar a chave de conta no Google Drive.');
+      return existing.id;
+    }
+    const boundary = `amandakey_${Date.now()}`;
+    const metadata = JSON.stringify({ name: ACCOUNT_KEY_FILE, parents: [folderId], mimeType: 'application/json' });
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST',
+      headers: { ...(await headers()), 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!response.ok) throw new Error('Falha ao criar a chave de conta no Google Drive.');
+    return (await response.json()).id;
+  }
+
+  function makeAccountSecretProvider(scope) {
+    return {
+      async read(vaultId) {
+        const folderId = getFolderId();
+        if (!folderId || !vaultId) return null;
+        const payload = await loadAccountKeyPayload(folderId);
+        const value = payload.vaults[`${scope}:${vaultId}`];
+        return typeof value === 'string' && value ? value : null;
+      },
+      async write(vaultId, secret) {
+        const folderId = getFolderId();
+        if (!folderId || !vaultId || !secret) return false;
+        const payload = await loadAccountKeyPayload(folderId);
+        const slot = `${scope}:${vaultId}`;
+        if (payload.vaults[slot] === secret) return true;
+        payload.vaults[slot] = secret;
+        payload.updatedAt = new Date().toISOString();
+        await writeAccountKeyPayload(folderId, payload);
+        return true;
+      }
+    };
+  }
+
+  function forgetAccountKeyCache() {
+    accountKeyCache = null;
+    accountKeyInflight = null;
+  }
+
+  SecureVault.setSecretProvider?.(makeAccountSecretProvider('amanda-clinica'));
+  IntegrationVault.setSecretProvider?.(makeAccountSecretProvider('borion-ecosystem-integration'));
 
   function scopedStorageKey(prefix, parentId, name) {
     return `${prefix}${parentId}_${encodeURIComponent(name)}`;
@@ -1203,11 +1317,45 @@
     startLivePollLoop() {
       this.stopLivePollLoop();
       if (!this.isConfigured()) return;
-      livePollTimer = setInterval(() => { this.checkForRemoteUpdate(); }, LIVE_POLL_INTERVAL_MS);
-      setTimeout(() => { this.checkForRemoteUpdate(); }, 180);
+      liveActiveUntil = Date.now() + LIVE_ACTIVE_WINDOW_MS;
+      lastUserActivityAt = Date.now();
+      if (!livePollBound && typeof document !== 'undefined') {
+        livePollBound = true;
+        const activity = () => { lastUserActivityAt = Date.now(); };
+        ['pointerdown', 'keydown', 'touchstart'].forEach(type => document.addEventListener(type, activity, { passive: true }));
+        window.addEventListener('online', () => this.boostLivePolling());
+      }
+      this.scheduleNextLivePoll(180);
     },
     stopLivePollLoop() {
-      if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+      if (livePollTimer) { clearTimeout(livePollTimer); livePollTimer = null; }
+    },
+    /* Acelera o ritmo por uma janela curta. Chamado logo depois de uma
+       gravação local, ao voltar pro app e ao reconectar à internet — são os
+       momentos em que o outro dispositivo tem mais chance de ter mexido em
+       alguma coisa. */
+    boostLivePolling(durationMs = LIVE_ACTIVE_WINDOW_MS) {
+      liveActiveUntil = Math.max(liveActiveUntil, Date.now() + Math.max(5000, Number(durationMs) || LIVE_ACTIVE_WINDOW_MS));
+      lastUserActivityAt = Date.now();
+      this.scheduleNextLivePoll(0);
+    },
+    nextLivePollDelay() {
+      if (typeof document !== 'undefined' && document.hidden) return LIVE_POLL_IDLE_MS;
+      if (typeof window.hasPendingGoogleDriveSave === 'function' && window.hasPendingGoogleDriveSave()) return LIVE_POLL_ACTIVE_MS;
+      if (Date.now() < liveActiveUntil) return LIVE_POLL_ACTIVE_MS;
+      if (Date.now() - lastUserActivityAt > LIVE_IDLE_AFTER_MS) return LIVE_POLL_IDLE_MS;
+      return LIVE_POLL_NORMAL_MS;
+    },
+    scheduleNextLivePoll(delay) {
+      if (!this.isConfigured()) return;
+      if (livePollTimer) { clearTimeout(livePollTimer); livePollTimer = null; }
+      const wait = Number.isFinite(delay) ? Math.max(0, delay) : this.nextLivePollDelay();
+      livePollTimer = setTimeout(() => {
+        livePollTimer = null;
+        Promise.resolve(this.checkForRemoteUpdate())
+          .catch(() => false)
+          .then(applied => { this.scheduleNextLivePoll(applied ? LIVE_POLL_ACTIVE_MS : undefined); });
+      }, wait);
     },
 
     /* Só confere METADADOS (a mesma checagem barata que já existe para
@@ -1252,6 +1400,7 @@
           renderView();
           if (typeof toast === 'function') toast('Atualizado com uma alteração feita em outro dispositivo.');
         }
+        liveActiveUntil = Date.now() + LIVE_ACTIVE_WINDOW_MS; // outro aparelho está ativo agora: fica atento
         return true;
       } catch (error) {
         console.warn('[GoogleDriveClinic] Checagem de atualização ao vivo falhou (tenta de novo em breve):', error);
@@ -1424,6 +1573,7 @@
       if (primaryEncryptionTimer) { clearTimeout(primaryEncryptionTimer); primaryEncryptionTimer = null; }
       if (backupEncryptionTimer) { clearTimeout(backupEncryptionTimer); backupEncryptionTimer = null; }
       encryptionMigrationInFlight = false;
+      forgetAccountKeyCache();
       resolvedFolders.clear();
       resolvedIntegrationFiles.clear();
       integrationFileInflight.clear();
@@ -1467,10 +1617,10 @@
      o próximo tick do timer pra já estar em dia. */
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && GoogleDriveClinic.isConfigured()) {
-      GoogleDriveClinic.checkForRemoteUpdate();
+      GoogleDriveClinic.boostLivePolling();
     }
   });
   window.addEventListener('focus', () => {
-    if (GoogleDriveClinic.isConfigured()) GoogleDriveClinic.checkForRemoteUpdate();
+    if (GoogleDriveClinic.isConfigured()) GoogleDriveClinic.boostLivePolling();
   });
 })();

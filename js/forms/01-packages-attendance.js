@@ -82,6 +82,52 @@ function viewPackage(id) {
   });
 }
 
+/* V1.23.0 — núcleo compartilhado do registro de atendimento.
+   Antes toda esta lógica (validação de pacote, estoque, custo, financeiro e
+   baixa do agendamento) vivia só dentro do onSubmit do formulário completo.
+   Agora o "Concluir" da agenda usa exatamente as mesmas regras — sem cópia
+   paralela que possa divergir com o tempo.
+   Recebe um objeto simples `o` (campos já lidos do formulário), o registro
+   existente (quando é edição) e a base de valores padrão. Devolve o item
+   gravado; quem chama cuida do persist/render. */
+function commitAttendanceRecord(o,existing=null,base={}){
+  const client=findClient(o.clientId),protocol=findProtocol(o.protocolId);
+  const linkedPackage=o.packageId?data().packages.find(pkg=>pkg.id===o.packageId):null;
+  if(statusIsRealized(o.status)){
+    const archivedProducts=(protocol?.products||[]).map(link=>findProductLocal(link.productId,link.productName)).filter(product=>product?.archived);
+    if(archivedProducts.length)throw new Error(`Este protocolo usa produto(s) arquivado(s): ${archivedProducts.map(product=>product.name).join(', ')}. Atualize o protocolo ou reative o estoque antes de registrar a sessão.`);
+    const archivedDisposables=(protocol?.disposables||[]).map(link=>findDisposableLocal(link.disposableId,link.disposableName)).filter(disposable=>disposable?.archived);
+    if(archivedDisposables.length)throw new Error(`Este protocolo usa descartável(is) arquivado(s): ${archivedDisposables.map(disposable=>disposable.name).join(', ')}. Atualize o protocolo ou reative o estoque antes de registrar a sessão.`);
+  }
+  if(o.packageId&&!linkedPackage)throw new Error('O pacote selecionado não existe mais.');
+  if(linkedPackage&&(linkedPackage.clientId!==o.clientId||linkedPackage.protocolId!==o.protocolId))throw new Error('O pacote selecionado não pertence à cliente e ao protocolo escolhidos.');
+  if(linkedPackage&&normalize(linkedPackage.status)==='cancelado')throw new Error('Este pacote está cancelado e não aceita novas sessões.');
+  if(linkedPackage&&statusIsRealized(o.status)){
+    const alreadyRealized=packageRealizedAttendances(linkedPackage.id).filter(att=>att.id!==existing?.id).length;
+    const used=Math.max(0,num(linkedPackage.sessionsBaseline))+alreadyRealized;
+    if(used>=Math.max(1,num(linkedPackage.sessionsPurchased)))throw new Error('Todas as sessões deste pacote já foram utilizadas.');
+  }
+  let next=o.nextReturn||'';
+  if(!next&&protocol?.returnDays){
+    const dt=dateFromIso(o.date); dt.setDate(dt.getDate()+num(protocol.returnDays)); next=localIsoDate(dt);
+  }
+  const charged=num(o.chargedValue),baseCost=num(protocol?.cost);
+  const item={...base,id:o.id||uid('AT'),date:o.date,clientId:o.clientId,clientName:client?.name||'',phone:client?.phone||'',protocolId:o.protocolId,protocolName:protocol?.name||'',packageId:o.packageId||'',duration:num(o.duration)||num(protocol?.duration),cost:baseCost,suggestedPrice:num(protocol?.price),chargedValue:charged,paymentMethod:o.paymentMethod||'',installments:o.paymentMethod==='Cartão de Crédito parcelado'?Math.max(1,num(o.installments)):1,paid:bool(o.paid),nextReturn:next,status:o.status,evolution:o.evolution||'',notes:o.notes||'',appointmentId:o.appointmentId||'',updatedAt:nowIso()};
+  applyAttendanceInventory(existing,item);
+  item.cost=Math.max(baseCost,num(item.inventoryCost)+num(item.disposableInventoryCost));
+  item.profit=charged-item.cost;
+  const idx=data().attendances.findIndex(x=>x.id===item.id);
+  idx>=0?data().attendances.splice(idx,1,item):data().attendances.push(item);
+  const packageIds=new Set([existing?.packageId,item.packageId].filter(Boolean));
+  packageIds.forEach(recalculatePackage);
+  if(item.appointmentId){
+    const ap=data().appointments.find(x=>x.id===item.appointmentId);
+    if(ap){ap.status=statusIsRealized(item.status)?'Concluído':item.status;ap.updatedAt=nowIso();}
+  }
+  syncFinanceForAttendance(item);
+  return item;
+}
+
 function openAttendanceForm(id='',prefill={}) {
   const existing=data().attendances.find(a=>a.id===id);
   const a={date:todayIso(),status:'Realizado',paid:true,paymentMethod:'Pix',chargedValue:0,duration:60,...prefill,...(existing||{})};
@@ -110,40 +156,8 @@ function openAttendanceForm(id='',prefill={}) {
     deleteText:'Excluir atendimento',
     submitText:'Salvar atendimento',
     onSubmit:async form=>{
-      const o=formObject(form),client=findClient(o.clientId),protocol=findProtocol(o.protocolId);
-      const linkedPackage=o.packageId?data().packages.find(pkg=>pkg.id===o.packageId):null;
-      if(statusIsRealized(o.status)){
-        const archivedProducts=(protocol?.products||[]).map(link=>findProductLocal(link.productId,link.productName)).filter(product=>product?.archived);
-        if(archivedProducts.length)throw new Error(`Este protocolo usa produto(s) arquivado(s): ${archivedProducts.map(product=>product.name).join(', ')}. Atualize o protocolo ou reative o estoque antes de registrar a sessão.`);
-        const archivedDisposables=(protocol?.disposables||[]).map(link=>findDisposableLocal(link.disposableId,link.disposableName)).filter(disposable=>disposable?.archived);
-        if(archivedDisposables.length)throw new Error(`Este protocolo usa descartável(is) arquivado(s): ${archivedDisposables.map(disposable=>disposable.name).join(', ')}. Atualize o protocolo ou reative o estoque antes de registrar a sessão.`);
-      }
-      if(o.packageId&&!linkedPackage)throw new Error('O pacote selecionado não existe mais.');
-      if(linkedPackage&&(linkedPackage.clientId!==o.clientId||linkedPackage.protocolId!==o.protocolId))throw new Error('O pacote selecionado não pertence à cliente e ao protocolo escolhidos.');
-      if(linkedPackage&&normalize(linkedPackage.status)==='cancelado')throw new Error('Este pacote está cancelado e não aceita novas sessões.');
-      if(linkedPackage&&statusIsRealized(o.status)){
-        const alreadyRealized=packageRealizedAttendances(linkedPackage.id).filter(att=>att.id!==existing?.id).length;
-        const used=Math.max(0,num(linkedPackage.sessionsBaseline))+alreadyRealized;
-        if(used>=Math.max(1,num(linkedPackage.sessionsPurchased)))throw new Error('Todas as sessões deste pacote já foram utilizadas.');
-      }
-      let next=o.nextReturn||'';
-      if(!next&&protocol?.returnDays){
-        const dt=dateFromIso(o.date); dt.setDate(dt.getDate()+num(protocol.returnDays)); next=localIsoDate(dt);
-      }
-      const charged=num(o.chargedValue),baseCost=num(protocol?.cost);
-      const item={...a,id:o.id||uid('AT'),date:o.date,clientId:o.clientId,clientName:client?.name||'',phone:client?.phone||'',protocolId:o.protocolId,protocolName:protocol?.name||'',packageId:o.packageId||'',duration:num(o.duration)||num(protocol?.duration),cost:baseCost,suggestedPrice:num(protocol?.price),chargedValue:charged,paymentMethod:o.paymentMethod||'',installments:o.paymentMethod==='Cartão de Crédito parcelado'?Math.max(1,num(o.installments)):1,paid:bool(o.paid),nextReturn:next,status:o.status,evolution:o.evolution||'',notes:o.notes||'',appointmentId:o.appointmentId||'',updatedAt:nowIso()};
-      applyAttendanceInventory(existing,item);
-      item.cost=Math.max(baseCost,num(item.inventoryCost)+num(item.disposableInventoryCost));
-      item.profit=charged-item.cost;
-      const idx=data().attendances.findIndex(x=>x.id===item.id);
-      idx>=0?data().attendances.splice(idx,1,item):data().attendances.push(item);
-      const packageIds=new Set([existing?.packageId,item.packageId].filter(Boolean));
-      packageIds.forEach(recalculatePackage);
-      if(item.appointmentId){
-        const ap=data().appointments.find(x=>x.id===item.appointmentId);
-        if(ap)ap.status=statusIsRealized(item.status)?'Concluído':item.status;
-      }
-      syncFinanceForAttendance(item);
+      const o=formObject(form);
+      const item=commitAttendanceRecord(o,existing,a);
       await persist(existing?'Atendimento editado':'Atendimento registrado',{detail:`${item.clientName} · ${item.protocolName}`});
       closeModal();renderView();toast('Atendimento salvo; estoque, pacote e financeiro atualizados.');
     }

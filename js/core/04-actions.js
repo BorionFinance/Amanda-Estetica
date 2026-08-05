@@ -37,6 +37,7 @@ async function handleAction(action, el) {
       'add-appointment':()=>openAppointmentForm(),
       'edit-appointment':()=>openAppointmentForm(id),
       'confirm-appointment':async()=>{const a=data().appointments.find(x=>x.id===id);if(a){a.status='Confirmado';a.confirmed=true;await persist('Agendamento confirmado',{detail:a.clientName});renderView();toast('Agendamento confirmado.');}},
+      'complete-appointment':()=>openAppointmentCompletionForm(id),
       'appointment-to-attendance':()=>{const a=data().appointments.find(x=>x.id===id);if(!a)return;const linked=data().attendances.find(x=>x.appointmentId===a.id);if(linked){openAttendanceForm(linked.id);return;}openAttendanceForm('',{appointmentId:a.id,date:a.date,clientId:a.clientId,protocolId:a.protocolId,packageId:a.packageId,duration:a.duration,chargedValue:a.packageId?0:a.value,paymentMethod:a.packageId?'Pacote':'Pix'});},
       'delete-appointment':()=>deleteAppointmentRecord(id),
       'agenda-today':()=>document.getElementById(`day-${todayIso()}`)?.scrollIntoView({behavior:'smooth'}),

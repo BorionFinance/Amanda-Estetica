@@ -73,6 +73,12 @@ function optionClients(current='') {
         idx>=0?data().appointments.splice(idx,1,item):data().appointments.push(item);
         await persist(existing?'Agendamento editado':'Agendamento criado',{detail:`${item.clientName} · ${item.protocolName}`});
         closeModal(); renderView(); toast('Agendamento salvo.');
+        /* V1.23.0 — marcar o status como "Concluído" aqui dentro também tem que
+           levar ao registro do atendimento, senão o horário some da agenda sem
+           nunca virar atendimento realizado na aba Atender. */
+        if(item.status==='Concluído'&&!data().attendances.some(x=>x.appointmentId===item.id)){
+          setTimeout(()=>openAppointmentCompletionForm(item.id),240);
+        }
       }
     });
     const form=$('#app-modal-form');
@@ -93,6 +99,90 @@ function optionClients(current='') {
     clientSel.addEventListener('change',autofill);
     protocolSel.addEventListener('change',autofill);
     form.elements.packageId.addEventListener('change',()=>{if(form.elements.packageId.value&&!existing)setMoneyFieldValue(form.elements.value,0);});
+  }
+
+
+  /* V1.23.0 — "Concluir" direto da agenda.
+     O que resolve: até aqui, transformar um horário agendado em atendimento
+     realizado exigia abrir o formulário completo de atendimento e preencher
+     tudo de novo. Agora o botão Concluir abre uma janela curta com o que
+     realmente muda na hora — valor, forma de pagamento e se já foi pago — e
+     ao confirmar o horário vira atendimento realizado e passa para a aba
+     Atender. Funciona antes ou depois da data do agendamento; a data do
+     atendimento continua editável na própria janela.
+     Toda a gravação passa por commitAttendanceRecord (01-packages-attendance.js),
+     então estoque, pacote e financeiro seguem exatamente as mesmas regras do
+     formulário completo. */
+  function openAppointmentCompletionForm(appointmentId=''){
+    const appointment=data().appointments.find(x=>x.id===appointmentId);
+    if(!appointment){toast('Agendamento não encontrado.','error');return;}
+    const linked=data().attendances.find(x=>x.appointmentId===appointment.id);
+    if(linked){openAttendanceForm(linked.id);return;}
+    const protocol=findProtocol(appointment.protocolId,appointment.protocolName);
+    const hasPackage=!!appointment.packageId&&!!data().packages.find(pkg=>pkg.id===appointment.packageId);
+    const suggested=hasPackage?0:(num(appointment.value)||num(protocol?.price));
+    const defaults={
+      date:appointment.date||todayIso(),
+      duration:num(appointment.duration)||num(protocol?.duration)||60,
+      chargedValue:suggested,
+      paymentMethod:hasPackage?'Pacote':'Pix',
+      installments:1,
+      paid:true
+    };
+    openModal({
+      title:'Concluir atendimento',
+      sub:`${appointment.clientName||'Cliente'} · ${appointment.protocolName||'Procedimento'} · ${formatDate(appointment.date)} às ${esc(appointment.time||'--:--')}`,
+      content:`<div class="form-grid completion-grid">
+        ${field('Data do atendimento','date',defaults.date,'date',{required:true,help:'Pode ser antes ou depois da data agendada.'})}
+        ${field('Duração (min)','duration',defaults.duration,'number',{min:0,step:5})}
+        ${hasPackage?`<div class="field span-2 completion-package-note"><strong>Sessão de pacote</strong><small>Esta sessão será descontada do pacote da cliente. Mantenha o valor em zero para não duplicar a receita já recebida no pacote.</small></div>`:''}
+        ${field('Valor cobrado','chargedValue',defaults.chargedValue,'number',{min:0,step:'0.01'})}
+        ${selectField('Forma de pagamento','paymentMethod',['Pix','Dinheiro','Cartão de Débito','Cartão de Crédito à vista','Cartão de Crédito parcelado','Pacote','Cortesia'],defaults.paymentMethod,{blank:false})}
+        ${field('Em quantas vezes','installments',defaults.installments,'number',{min:1,max:24,step:1,className:'installments-field'})}
+        ${checkField('Pagamento já recebido','paid',defaults.paid,'Desmarque se o valor ainda está em aberto — ele fica como pendente no financeiro.')}
+        ${field('Próximo retorno','nextReturn','','date')}
+        ${textarea('Evolução / resultado observado','evolution','',{rows:3,className:'span-2'})}
+        ${textarea('Observações','notes',appointment.notes||'',{rows:2,className:'span-2'})}
+      </div>`,
+      submitText:'Concluir e enviar para Atender',
+      extraFooter:`<button type="button" class="btn secondary" data-action="edit-appointment" data-id="${eattr(appointment.id)}">${icon('edit',17)} Editar agendamento</button>`,
+      onSubmit:async form=>{
+        const o=formObject(form);
+        const item=commitAttendanceRecord({
+          id:'',
+          date:o.date,
+          clientId:appointment.clientId,
+          protocolId:appointment.protocolId,
+          packageId:appointment.packageId||'',
+          duration:o.duration,
+          chargedValue:o.chargedValue,
+          paymentMethod:o.paymentMethod,
+          installments:o.installments,
+          paid:o.paid,
+          status:'Realizado',
+          nextReturn:o.nextReturn||'',
+          evolution:o.evolution||'',
+          notes:o.notes||'',
+          appointmentId:appointment.id
+        },null,{status:'Realizado'});
+        await persist('Agendamento concluído',{detail:`${item.clientName} · ${item.protocolName}`});
+        closeModal();
+        navTo('attendances');
+        toast(bool(o.paid)?'Atendimento concluído e registrado em Atender.':'Atendimento concluído. O pagamento ficou em aberto no financeiro.');
+      }
+    });
+    const form=$('#app-modal-form');
+    const refreshInstallments=()=>{
+      const box=form.querySelector('.installments-field');
+      if(box)box.classList.toggle('is-hidden',form.elements.paymentMethod.value!=='Cartão de Crédito parcelado');
+    };
+    const refreshPaid=()=>{
+      const paid=form.elements.paid;
+      if(!paid)return;
+      if(form.elements.paymentMethod.value==='Cortesia'){setMoneyFieldValue(form.elements.chargedValue,0);}
+    };
+    form.elements.paymentMethod.addEventListener('change',()=>{refreshInstallments();refreshPaid();});
+    refreshInstallments();
   }
 
   function openClientForm(id='') {

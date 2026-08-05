@@ -56,7 +56,9 @@ function statusTone(status) {
               </div>
               <div class="card-actions">
                 ${['Agendado','Reagendado'].includes(a.status) ? `<button class="icon-btn small success" title="Confirmar" data-action="confirm-appointment" data-id="${eattr(a.id)}">${icon('check',16)}</button>`:''}
-                ${!['Cancelado','Concluído'].includes(a.status) ? `<button class="icon-btn small" title="Registrar atendimento" data-action="appointment-to-attendance" data-id="${eattr(a.id)}">${icon('clipboard',16)}</button>`:''}
+                ${!['Cancelado','Concluído'].includes(a.status) ? `<button class="btn compact conclude-appointment-btn" title="Concluir e enviar para Atender" data-action="complete-appointment" data-id="${eattr(a.id)}">${icon('check',15)} Concluir</button>`:''}
+                ${!['Cancelado','Concluído'].includes(a.status) ? `<button class="icon-btn small" title="Abrir ficha completa de atendimento" data-action="appointment-to-attendance" data-id="${eattr(a.id)}">${icon('clipboard',16)}</button>`:''}
+                ${a.status==='Concluído' ? `<button class="icon-btn small" title="Abrir atendimento registrado" data-action="appointment-to-attendance" data-id="${eattr(a.id)}">${icon('clipboard',16)}</button>`:''}
                 <button class="icon-btn small" title="Editar" data-action="edit-appointment" data-id="${eattr(a.id)}">${icon('edit',16)}</button><button class="icon-btn small danger" title="Excluir" data-action="delete-appointment" data-id="${eattr(a.id)}">${icon('trash',16)}</button>
               </div>
             </article>`).join('')}</div>

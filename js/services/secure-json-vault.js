@@ -768,6 +768,19 @@
     let unlockVaultId = '';
     let lockGeneration = 0;
     let pendingRecovery = null;
+    /* V1.23.0 — "somente login com Google".
+       O provedor de segredo é instalado pelo google-drive.js e guarda o segredo
+       do cofre num arquivo dentro da PRÓPRIA pasta do app no Drive. Com ele,
+       abrir o app depois do login Google já destranca a base, sem pedir a senha
+       mestra. Tradeoff assumido e consciente: o cadeado passa a ser a conta
+       Google — quem abre a pasta abre os dados. O restante da criptografia
+       (AES-GCM, integridade, vínculo de dono, chave de recuperação) continua
+       exatamente igual. */
+    let secretProvider = null;
+
+    function randomMachineSecret() {
+      return bytesToBase64Url(randomBytes(48));
+    }
 
     async function bindOwner(value) {
       ownerId = String(value || '').trim();
@@ -784,7 +797,10 @@
 
     async function createEnvelope(value) {
       if (!ownerBinding) fail('SECURE_VAULT_OWNER_REQUIRED');
-      const password = await promptNewPassword(appId, appName, dialogTheme);
+      // Com provedor instalado o segredo é sorteado pelo próprio app (48 bytes
+      // aleatórios) e guardado na pasta do Drive — ninguém digita nada.
+      const machineManaged = !!(secretProvider && secretProvider.write);
+      const password = machineManaged ? randomMachineSecret() : await promptNewPassword(appId, appName, dialogTheme);
       const recoveryCode = generateRecoveryCode();
       const recoverySecret = canonicalRecoveryCode(recoveryCode);
       const vaultId = randomId();
@@ -805,13 +821,18 @@
         createdAt: new Date().toISOString()
       };
       const envelope = await updateEnvelope(value);
+      if (machineManaged) {
+        try { await secretProvider.write(vaultId, password); }
+        catch (error) { console.warn('[SecureJsonVault] Nao foi possivel guardar a chave de conta no Drive:', error); }
+      }
       // A chave de recuperação só é entregue depois que o chamador confirma
       // que o primeiro envelope foi realmente persistido. Isso evita gerar
       // uma nova chave a cada recarga quando o upload inicial falha ou ainda
       // não terminou.
       pendingRecovery = { vaultId, recoveryCode };
       if (
-        !readBiometricRecord(appId, vaultId)
+        !machineManaged
+        && !readBiometricRecord(appId, vaultId)
         && await biometricPlatformAvailable()
         && await secureConfirm({ appName, theme: dialogTheme, title: 'Ativar biometria', message: 'Deseja usar a biometria deste celular nos próximos acessos?', submitLabel: 'Ativar biometria', cancelLabel: 'Agora não', note: false })
       ) {
@@ -905,6 +926,17 @@
     async function requestUnlock(envelope) {
       if (!ownerBinding) fail('SECURE_VAULT_OWNER_REQUIRED');
       if (envelope.ownerBinding !== ownerBinding) fail('SECURE_VAULT_WRONG_OWNER');
+      // V1.23.0 — caminho normal do dia a dia: a chave guardada na pasta do
+      // Drive abre a base sem nenhuma pergunta. Só cai nos caminhos antigos
+      // (biometria / senha mestra) se ela não existir ou não servir.
+      if (secretProvider && secretProvider.read) {
+        try {
+          const stored = await secretProvider.read(envelope.vaultId);
+          if (stored) return await unwrapDek(envelope, stored, 'password');
+        } catch (error) {
+          console.warn('[SecureJsonVault] A chave de conta nao abriu o cofre; seguindo para os caminhos manuais:', error);
+        }
+      }
       if (readBiometricRecord(appId, envelope.vaultId)) {
         try {
           const biometricDek = await unlockWithBiometric(appId, envelope);
@@ -931,6 +963,17 @@
         if (password === null) fail('SECURE_VAULT_UNLOCK_CANCELLED');
         try {
           const dek = await unwrapDek(envelope, password, 'password');
+          // MIGRAÇÃO ÚNICA: esta é a última vez que a senha é pedida. A partir
+          // daqui ela vive na chave de conta dentro da pasta do Drive e o app
+          // destranca sozinho depois do login Google.
+          if (secretProvider && secretProvider.write) {
+            try {
+              await secretProvider.write(envelope.vaultId, password);
+              return dek;
+            } catch (error) {
+              console.warn('[SecureJsonVault] Nao foi possivel guardar a chave de conta; a senha continuara sendo pedida:', error);
+            }
+          }
           if (
             !readBiometricRecord(appId, envelope.vaultId)
             && await biometricPlatformAvailable()
@@ -1056,6 +1099,11 @@
       appId,
       appName,
       bindOwner,
+      setSecretProvider(provider) {
+        secretProvider = provider && typeof provider === 'object' ? provider : null;
+        return !!secretProvider;
+      },
+      hasSecretProvider: () => !!secretProvider,
       open,
       protect,
       openText,

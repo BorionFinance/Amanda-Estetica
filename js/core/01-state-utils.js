@@ -319,6 +319,14 @@ let STATE = null;
   }
 
   async function persist(reason = '', options = {}) {
+    /* V1.23.0 — bug real do efeito "fantasma": a marca de alteração pendente
+       só era ligada depois do `await ClinicStorage.save(STATE)` mais abaixo.
+       Nesse intervalo o "atualização ao vivo" (checkForRemoteUpdate) enxergava
+       a sessão como limpa e podia trocar o STATE inteiro pelo conteúdo do
+       Drive — desfazendo na tela a exclusão ou o cadastro recém-feito. Agora
+       a marca sobe na primeira linha, antes de qualquer await. */
+    const willSaveToGoogle = options.google !== false && data().settings.autosaveGoogle !== false;
+    if (willSaveToGoogle) googleSaveDirty = true;
     if (reason) addAudit(reason, options.detail || '');
     if (options.intentionalDeletionBeforeCounts) {
       authorizeIntentionalDeletionFromBaseline(options.intentionalDeletionBeforeCounts, reason || 'exclusao-confirmada');
@@ -378,20 +386,43 @@ let STATE = null;
   // gravação daqui pra fora ainda não resolvida (nem o timer do debounce,
   // nem a chamada de rede em si).
   let googleSaveInFlight = false;
+  /* V1.23.0 — contador de alterações pendentes. Sem ele havia uma corrida real:
+     se a Amanda mexia em algo enquanto uma gravação já estava na rede, o fim
+     dessa gravação limpava a marca de "pendente" e a alteração nova ficava
+     só na tela — reaparecendo como sumiço ao recarregar. Agora a marca só é
+     limpa se nada novo entrou no meio do caminho. */
+  let googleSaveSeq = 0;
   function hasPendingGoogleDriveSave() {
     return !!googleSaveTimer || !!googleSaveRetryTimer || googleSaveInFlight || googleSaveDirty;
   }
   window.hasPendingGoogleDriveSave = hasPendingGoogleDriveSave;
 
-  function scheduleGoogleDriveSave(delay = 180) {
+  function scheduleGoogleDriveSave(delay = 60) {
     googleSaveDirty = true;
+    googleSaveSeq++;
     clearTimeout(googleSaveTimer);
     clearTimeout(googleSaveRetryTimer);
     googleSaveRetryTimer = null;
     if (googleSaveIdle && 'cancelIdleCallback' in window) cancelIdleCallback(googleSaveIdle);
     googleSaveIdle = null;
+    if (!Number(delay)) { googleSaveTimer = 0; void runGoogleDriveSave(); return; }
     googleSaveTimer = setTimeout(() => {
-      const run = async () => {
+      // O banco leve começa a ser enviado imediatamente após o pequeno
+      // debounce. Esperar requestIdleCallback acrescentava até 3 s antes de
+      // a rede começar, justamente no caminho de clientes e lançamentos.
+      void runGoogleDriveSave();
+    }, Math.max(0, Number(delay) || 0));
+  }
+
+  /* V1.23.0 — antes este corpo vivia dentro de um `setTimeout` anônimo. Foi
+     separado porque o Guardião de saída precisa disparar a gravação de forma
+     síncrona: no `pagehide` do celular um `setTimeout(0)` simplesmente nunca
+     chega a rodar, e era aí que a última alteração se perdia. */
+  async function runGoogleDriveSave() {
+    // Uma gravação de cada vez. Se já existe uma na rede, `googleSaveDirty`
+    // continua ligado e o próximo agendamento cobre o que ficou.
+    if (googleSaveInFlight) return;
+    const run = async () => {
         googleSaveIdle = null;
         googleSaveTimer = 0;
         googleSaveInFlight = true;
@@ -419,10 +450,15 @@ let STATE = null;
           } catch (interopError) {
             console.warn('[Amanda Clínica] Não foi possível preparar o estado da integração antes do salvamento:', interopError);
           }
+          const seq = googleSaveSeq;
           await GoogleDriveClinic.save(STATE);
-          googleSaveDirty = false;
+          if (seq === googleSaveSeq) googleSaveDirty = false;
           setCloudSyncStatus('synced','Sincronizado com o Google');
           updateSaveStatus('Google Drive sincronizado', 'ok');
+          // V1.23.0 — acabou de haver movimento aqui; o outro aparelho tem
+          // grande chance de mexer em algo agora. Mantém o ritmo rápido de
+          // checagem por uma janela curta em vez de voltar direto ao normal.
+          GoogleDriveClinic.boostLivePolling?.();
           // A integração só publica depois que a base oficial confirmou a mesma
           // alteração. Assim um registro excluído nunca some no bridge antes de
           // a exclusão estar durável no arquivo principal da Amanda.
@@ -449,14 +485,31 @@ let STATE = null;
           }
         } finally {
           googleSaveInFlight = false;
+          // Alguma coisa mudou enquanto esta gravação estava na rede (ou um
+          // flush foi recusado por já haver uma em voo): manda a próxima.
+          if (googleSaveDirty && !googleSaveTimer && !googleSaveRetryTimer) scheduleGoogleDriveSave(120);
         }
-      };
-      // O banco leve começa a ser enviado imediatamente após o pequeno
-      // debounce. Esperar requestIdleCallback acrescentava até 3 s antes de
-      // a rede começar, justamente no caminho de clientes e lançamentos.
-      void run();
-    }, Math.max(0, Number(delay) || 0));
+    };
+    return await run();
   }
+
+  /* V1.23.0 — usado pelo Guardião de saída (11-exit-save-guard.js).
+     O app é cloud-only: enquanto o Google Drive não confirma, a alteração só
+     existe na tela. No celular, trocar de app ou fechar o PWA congela a página;
+     se o timer do debounce ainda não disparou, ele nunca dispara e a alteração
+     se perde — é exatamente o "excluo, atualizo e volta" / "cadastro, atualizo
+     e some". Esta função corta o debounce e começa a gravação no mesmo
+     instante, aproveitando os últimos milissegundos em que o navegador ainda
+     deixa código rodar. */
+  function flushGoogleDriveSaveNow(reason = 'saida') {
+    if (!googleSaveDirty && !googleSaveTimer && !googleSaveRetryTimer) return false;
+    if (googleSaveInFlight) return true; // já está na rede; interromper aqui não ajuda
+    if (window.AppLifecycle && !window.AppLifecycle.canWrite()) return false;
+    try { console.info('[Amanda Clínica] Gravação imediata antes de sair:', reason); } catch (_) { }
+    scheduleGoogleDriveSave(0);
+    return true;
+  }
+  window.flushGoogleDriveSaveNow = flushGoogleDriveSaveNow;
 
   function cloudSyncSnapshot() {
     if (CLOUD_SYNC_STATE === 'disconnected' && window.GoogleDriveClinic?.isConfigured?.()) {
