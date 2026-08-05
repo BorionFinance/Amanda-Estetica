@@ -768,7 +768,7 @@
     let unlockVaultId = '';
     let lockGeneration = 0;
     let pendingRecovery = null;
-    /* V1.23.0 — "somente login com Google".
+    /* V1.23.1 — "somente login com Google".
        O provedor de segredo é instalado pelo google-drive.js e guarda o segredo
        do cofre num arquivo dentro da PRÓPRIA pasta do app no Drive. Com ele,
        abrir o app depois do login Google já destranca a base, sem pedir a senha
@@ -926,7 +926,7 @@
     async function requestUnlock(envelope) {
       if (!ownerBinding) fail('SECURE_VAULT_OWNER_REQUIRED');
       if (envelope.ownerBinding !== ownerBinding) fail('SECURE_VAULT_WRONG_OWNER');
-      // V1.23.0 — caminho normal do dia a dia: a chave guardada na pasta do
+      // V1.23.1 — caminho normal do dia a dia: a chave guardada na pasta do
       // Drive abre a base sem nenhuma pergunta. Só cai nos caminhos antigos
       // (biometria / senha mestra) se ela não existir ou não servir.
       if (secretProvider && secretProvider.read) {

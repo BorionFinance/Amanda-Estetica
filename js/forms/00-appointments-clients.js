@@ -73,7 +73,7 @@ function optionClients(current='') {
         idx>=0?data().appointments.splice(idx,1,item):data().appointments.push(item);
         await persist(existing?'Agendamento editado':'Agendamento criado',{detail:`${item.clientName} · ${item.protocolName}`});
         closeModal(); renderView(); toast('Agendamento salvo.');
-        /* V1.23.0 — marcar o status como "Concluído" aqui dentro também tem que
+        /* V1.23.1 — marcar o status como "Concluído" aqui dentro também tem que
            levar ao registro do atendimento, senão o horário some da agenda sem
            nunca virar atendimento realizado na aba Atender. */
         if(item.status==='Concluído'&&!data().attendances.some(x=>x.appointmentId===item.id)){
@@ -102,7 +102,7 @@ function optionClients(current='') {
   }
 
 
-  /* V1.23.0 — "Concluir" direto da agenda.
+  /* V1.23.1 — "Concluir" direto da agenda.
      O que resolve: até aqui, transformar um horário agendado em atendimento
      realizado exigia abrir o formulário completo de atendimento e preencher
      tudo de novo. Agora o botão Concluir abre uma janela curta com o que

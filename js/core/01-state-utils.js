@@ -319,7 +319,7 @@ let STATE = null;
   }
 
   async function persist(reason = '', options = {}) {
-    /* V1.23.0 — bug real do efeito "fantasma": a marca de alteração pendente
+    /* V1.23.1 — bug real do efeito "fantasma": a marca de alteração pendente
        só era ligada depois do `await ClinicStorage.save(STATE)` mais abaixo.
        Nesse intervalo o "atualização ao vivo" (checkForRemoteUpdate) enxergava
        a sessão como limpa e podia trocar o STATE inteiro pelo conteúdo do
@@ -386,7 +386,7 @@ let STATE = null;
   // gravação daqui pra fora ainda não resolvida (nem o timer do debounce,
   // nem a chamada de rede em si).
   let googleSaveInFlight = false;
-  /* V1.23.0 — contador de alterações pendentes. Sem ele havia uma corrida real:
+  /* V1.23.1 — contador de alterações pendentes. Sem ele havia uma corrida real:
      se a Amanda mexia em algo enquanto uma gravação já estava na rede, o fim
      dessa gravação limpava a marca de "pendente" e a alteração nova ficava
      só na tela — reaparecendo como sumiço ao recarregar. Agora a marca só é
@@ -414,7 +414,7 @@ let STATE = null;
     }, Math.max(0, Number(delay) || 0));
   }
 
-  /* V1.23.0 — antes este corpo vivia dentro de um `setTimeout` anônimo. Foi
+  /* V1.23.1 — antes este corpo vivia dentro de um `setTimeout` anônimo. Foi
      separado porque o Guardião de saída precisa disparar a gravação de forma
      síncrona: no `pagehide` do celular um `setTimeout(0)` simplesmente nunca
      chega a rodar, e era aí que a última alteração se perdia. */
@@ -455,7 +455,7 @@ let STATE = null;
           if (seq === googleSaveSeq) googleSaveDirty = false;
           setCloudSyncStatus('synced','Sincronizado com o Google');
           updateSaveStatus('Google Drive sincronizado', 'ok');
-          // V1.23.0 — acabou de haver movimento aqui; o outro aparelho tem
+          // V1.23.1 — acabou de haver movimento aqui; o outro aparelho tem
           // grande chance de mexer em algo agora. Mantém o ritmo rápido de
           // checagem por uma janela curta em vez de voltar direto ao normal.
           GoogleDriveClinic.boostLivePolling?.();
@@ -493,7 +493,7 @@ let STATE = null;
     return await run();
   }
 
-  /* V1.23.0 — usado pelo Guardião de saída (11-exit-save-guard.js).
+  /* V1.23.1 — usado pelo Guardião de saída (11-exit-save-guard.js).
      O app é cloud-only: enquanto o Google Drive não confirma, a alteração só
      existe na tela. No celular, trocar de app ou fechar o PWA congela a página;
      se o timer do debounce ainda não disparou, ele nunca dispara e a alteração

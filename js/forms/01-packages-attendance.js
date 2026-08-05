@@ -82,7 +82,7 @@ function viewPackage(id) {
   });
 }
 
-/* V1.23.0 — núcleo compartilhado do registro de atendimento.
+/* V1.23.1 — núcleo compartilhado do registro de atendimento.
    Antes toda esta lógica (validação de pacote, estoque, custo, financeiro e
    baixa do agendamento) vivia só dentro do onSubmit do formulário completo.
    Agora o "Concluir" da agenda usa exatamente as mesmas regras — sem cópia

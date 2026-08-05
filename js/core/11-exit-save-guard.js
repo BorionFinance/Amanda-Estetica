@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Amanda Estética v1.23.0 — Guardião de saída (mesma ideia do ExitSaveGuard do
+ * Amanda Estética v1.23.1 — Guardião de saída (mesma ideia do ExitSaveGuard do
  * Borion Finance).
  *
  * O problema real que isto resolve

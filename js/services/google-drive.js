@@ -144,7 +144,7 @@
      REVISÃO (metadados, ver readRemoteAuthoritative) do arquivo principal.
      Se mudou, é porque outro dispositivo salvou — busca o conteúdo completo
      e atualiza a tela sozinho, sem precisar sair do app e entrar de novo. */
-  /* V1.23.0 — ritmo adaptativo (mesma mecânica do Borion Finance).
+  /* V1.23.1 — ritmo adaptativo (mesma mecânica do Borion Finance).
      O intervalo fixo de 1,2 s batia no Drive o tempo todo, inclusive com o
      app parado aberto no celular: gastava bateria, cota da API e deixava a
      rede ocupada bem na hora em que uma gravação precisava sair. Agora o
@@ -376,7 +376,7 @@
 
 
   /* =========================================================================
-     V1.23.0 — Chave de conta: "somente login com Google"
+     V1.23.1 — Chave de conta: "somente login com Google"
      -------------------------------------------------------------------------
      O pedido foi tirar a senha mestra, que ficava sendo cobrada toda vez que
      o app abria (e duas vezes, porque existem DOIS cofres: o da clínica e o
@@ -1511,57 +1511,43 @@
       const { folderId } = await this.ensureConnection(false);
       return (await ensureFolder(folderId, APP_FOLDERS.integration)).id;
     },
+    /* V1.23.1 — INTEROP EM TEXTO CLARO (bridge + ack).
+       Estes dois arquivos são escritos por um aplicativo e lidos por OUTRO
+       (Amanda Estética <-> Borion Finance). Cada lado cifrava com a chave do
+       seu próprio cofre, então o outro nunca conseguia abrir: o Borion parava
+       num pedido de "senha mestra" que não abriria nada, e a clínica não
+       conseguia ler o ack de volta — a integração ficava rodando no vazio.
+       Agora bridge e ack são JSON normal, dentro da pasta do Drive já protegida
+       pela conta Google e pelo escopo drive.file. A BASE da clínica
+       (Amanda_Clinica_Dados.json) continua cifrada exatamente como antes; só o
+       canal de integração deixou de ser, porque é o único arquivo que precisa
+       ser lido por um aplicativo diferente. */
     async writeIntegrationJson(name, object) {
       const folderId = await this.integrationFolderId();
       let existing = await resolveIntegrationFile(folderId, name, null);
-
-      /* V1.22.4 — CORREÇÃO DO POPUP REPETIDO DE “CRIAR SENHA MESTRA”.
-         O publicador da integração roda poucos segundos depois de cada login.
-         Antes, ele tentava PROTEGER o novo snapshot antes de abrir o envelope
-         já salvo no Drive. Como a chave da integração existe apenas na memória
-         durante a sessão, o cofre concluía incorretamente que era uma primeira
-         configuração e abria novamente o fluxo de criação da senha mestra.
-
-         Agora, na primeira escrita da sessão, um arquivo já existente é aberto
-         primeiro. Isso restaura/desbloqueia o cofre persistido e só então gera
-         a próxima revisão. Se ainda não houver arquivo, o primeiro conteúdo já
-         é criado cifrado — nunca existe uma cópia intermediária em texto puro. */
-      if (existing && !IntegrationVault.status?.().unlocked) {
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, { headers: await headers() });
-        if (!response.ok) throw new Error('Falha ao preparar a integracao segura do Google Drive.');
-        await IntegrationVault.open(await response.json(), { prepare: false });
-      }
-
-      const protectedObject = await IntegrationVault.protect(object);
-
-      if (!existing) {
-        // `protectedObject` já é um envelope cifrado. Passá-lo como objeto de
-        // criação evita a antiga janela em que o arquivo nascia em texto puro
-        // e só era criptografado numa segunda requisição.
-        existing = await resolveIntegrationFile(folderId, name, protectedObject);
-      }
-
-      // Atualiza também quando outra aba/dispositivo criou o arquivo durante
-      // esta inicialização, garantindo que o conteúdo final seja o envelope
-      // protegido desta sessão.
-      const result = await updateJsonFile(existing.id, protectedObject);
-      await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
-      if (IntegrationVault.needsMigration()) IntegrationVault.markMigrated();
-      return result;
+      if (!existing) existing = await resolveIntegrationFile(folderId, name, object);
+      return await updateJsonFile(existing.id, object);
     },
+    /* Leitura tolerante: JSON normal abre direto. Um envelope antigo só é
+       aberto se a chave desta instalação servir, e SEM perguntar nada
+       (interactive:false). Não servindo, devolve null em vez de travar — a
+       próxima publicação regrava o arquivo em texto claro. */
     async readIntegrationJson(name) {
       const folderId = await this.integrationFolderId();
       const existing = await resolveIntegrationFile(folderId, name, null);
       if (!existing) return null;
       const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, { headers: await headers() });
       if (!response.ok) throw new Error('Falha ao carregar a integracao do Google Drive.');
-      const value = await IntegrationVault.open(await response.json());
-      if (IntegrationVault.needsMigration()) {
-        await updateJsonFile(existing.id, await IntegrationVault.protect(value));
-        await IntegrationVault.confirmSetupPersisted?.(IntegrationVault.status?.().vaultId || '');
-        IntegrationVault.markMigrated();
+      const raw = await response.json();
+      if (!IntegrationVault.isEnvelope?.(raw)) return raw;
+      try {
+        const value = await IntegrationVault.open(raw, { interactive: false });
+        await updateJsonFile(existing.id, value);
+        return value;
+      } catch (error) {
+        console.warn('[GoogleDriveClinic] arquivo de integração antigo cifrado por outra instalação; será regravado em texto claro na próxima publicação:', error && error.code || error);
+        return null;
       }
-      return value;
     },
 
     disconnect() {

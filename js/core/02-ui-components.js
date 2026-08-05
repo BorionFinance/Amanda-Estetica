@@ -73,7 +73,7 @@ function field(label, name, value = '', type = 'text', options = {}) {
     const renderedValue = money ? formatMoneyInputValue(value) : value;
     const moneyAttrs = money ? 'inputmode="numeric" autocomplete="off" data-money-input data-money-value="'+eattr(parseMoneyInputValue(value))+'"' : '';
     const control = `<input type="${renderedType}" name="${eattr(name)}" value="${eattr(renderedValue)}" ${required} ${money ? '' : `${min} ${max} ${step}`} ${placeholder} ${readonly} ${moneyAttrs}>`;
-    // V1.23.0 — o selo "R$" deixou de ser um ::after da label (que se desalinhava
+    // V1.23.1 — o selo "R$" deixou de ser um ::after da label (que se desalinhava
     // quando o campo tinha texto de ajuda embaixo ou em telas pequenas) e passou a
     // viver dentro de um invólucro colado ao próprio input.
     return `<label class="field ${cls} ${money ? 'money-field' : ''}">
